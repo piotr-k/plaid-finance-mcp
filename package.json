@@ -16,7 +16,8 @@
     "link": "tsx src/link.ts",
     "cli": "tsx src/cli.ts",
     "smoke": "tsx scripts/smoke.ts",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "setup": "tsx scripts/setup.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

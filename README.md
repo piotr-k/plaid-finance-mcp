@@ -13,6 +13,14 @@ Run it two ways:
 Read-only by construction: Link, `/accounts/get`, `/accounts/balance/get`, `/transactions/sync`,
 `/liabilities/get`, `/institutions/get_by_id`. No auth, payments or transfer products are requested.
 
+### Who this is for
+
+You need to be comfortable in a terminal: installing Node, running npm, editing a `.env` file. You also
+need a [Plaid developer account](https://dashboard.plaid.com). Sandbox works immediately with fake banks;
+connecting real banks requires Plaid's production approval, which is an application and usually a few
+days. If that is not you, Claude's built-in Personal Finance (below) gives you the conversation part with
+no setup at all. If it is, `npm run setup` walks you through the rest in about ten minutes.
+
 ### Why not Anthropic's Personal Finance?
 
 Claude's built-in [Personal Finance](https://support.claude.com/en/articles/18185620-use-personal-finance-in-claude)
@@ -42,21 +50,19 @@ the plumbing, or either one alone.
 ```bash
 git clone https://github.com/piotr-k/plaid-finance-mcp.git && cd plaid-finance-mcp
 npm install
-cp .env.example .env
+npm run setup
 ```
 
-Open `.env` and fill in `PLAID_CLIENT_ID` and `PLAID_SECRET_SANDBOX` from
-<https://dashboard.plaid.com/developers/keys>. Leave `PLAID_ENV=sandbox`. Never paste keys into a chat.
-(If you use the Plaid CLI, `plaid keys write --env sandbox --gitignore` fills the file for you.)
+The setup wizard checks your Node and build toolchain, asks for your Plaid keys from
+<https://dashboard.plaid.com/developers/keys> with hidden input and writes them to `.env` (git-ignored),
+builds, then runs the sandbox smoke test: it links two fake banks without a browser, syncs them, starts the
+real MCP server over stdio, calls every tool and prints `SMOKE OK`. It ends by printing the exact
+`claude mcp add` command for your machine. Rerun it any time; existing values are kept unless you choose
+to replace them. Never paste keys into a chat.
 
-```bash
-npm run build
-npm run smoke
-```
-
-The smoke test links two sandbox banks without a browser, syncs them, starts the real MCP server over
-stdio, calls every tool and prints `SMOKE OK` with the first lines of a CSV. If that works, your keys and
-toolchain are fine.
+Prefer to do it by hand? `cp .env.example .env`, fill in `PLAID_CLIENT_ID` and `PLAID_SECRET_SANDBOX`,
+then `npm run build && npm run smoke`. (With the Plaid CLI, `plaid keys write --env sandbox --gitignore`
+fills the file for you.)
 
 To try the browser flow: `npm run link` opens Plaid's hosted page. Pick any bank and sign in with
 `user_good` / `pass_good`. The terminal reports the linked accounts when you finish.
