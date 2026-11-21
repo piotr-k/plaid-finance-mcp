@@ -206,7 +206,9 @@ refresh, which Plaid bills separately.
   tokens. Clients may only register redirect URIs matching `ALLOWED_REDIRECTS`: by default the exact claude.ai
   and claude.com callback URLs, plus loopback for Claude Code. The sign-in page names the client and the exact
   address that will receive the code,
-  so you can refuse a request you did not start, and it cannot be framed. Wrong passphrases are limited to
+  so you can refuse a request you did not start, and it cannot be framed. Each sign-in is also bound
+  to the browser that started it with an HttpOnly cookie set at /authorize, so a forwarded sign-in link
+  cannot be completed by anyone else. Wrong passphrases are limited to
   3 per sign-in request, 5 per IP and 60 overall per 15 minutes, counted in SQLite so a restart does not
   reset them. The passphrase must be at least 8 characters; use 16 or more. Plaid webhooks are verified
   (ES256, five-minute window) and key lookups for unknown key ids are negative-cached and rate-limited.

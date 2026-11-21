@@ -35,7 +35,9 @@ deployment-specific notes belong in `CLAUDE.local.md` (also git-ignored), not he
   Fly-Client-IP only when FLY_APP_NAME is set; `TRUST_PROXY` defaults 1 on Fly, 0 elsewhere; /mcp runs bearer
   auth (requiredScopes finance:read) before JSON parsing and link tools need finance:link; webhook `keyFor`
   validates kid, negative-caches only definitive failures, coalesces, 20 lookups/min; hosted `unlink` gated by
-  `HOSTED_UNLINK`; get_balances one live call per item per minute; client_name capped at 100 chars. Keep these when touching oauth.ts or webhooks.ts.
+  `HOSTED_UNLINK`; get_balances one live call per item per minute; client_name capped at 100 chars;
+  pending requests bound to the starting browser via the HttpOnly `mcp_authorize` cookie (`bind_hash` column,
+  additive migration in db.ts) and enforced in the login router before the passphrase is compared. Keep these when touching oauth.ts or webhooks.ts.
 - `cli.ts` items/sync/export/unlink/reset-login/export-items.
 - No redirect URI: production rejects http://localhost redirect URIs (HTTPS only), so Hosted Link is the
   only laptop-friendly way to link OAuth banks. Do not reintroduce a local Link page without HTTPS.

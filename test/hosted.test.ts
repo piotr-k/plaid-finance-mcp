@@ -40,7 +40,7 @@ test("oauth: register → authorize → login → code → tokens → verify →
   assert.deepEqual(await p.clientsStore.getClient(client.client_id), client);
 
   let redirected = "";
-  const res = { redirect: (_c: number, url: string) => { redirected = url; } } as never;
+  const res = { redirect: (_c: number, url: string) => { redirected = url; }, cookie: () => {} } as never;
   const verifier = "v".repeat(43);
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   await p.authorize(client, { codeChallenge: challenge, redirectUri: "http://127.0.0.1:1/cb", state: "s1", scopes: ["finance:read"] }, res);
@@ -91,7 +91,7 @@ test("oauth: the login page knows which client and redirect host it is approving
   const p = new oauth.SqliteOAuthProvider(db);
   const client = await p.clientsStore.registerClient!({ redirect_uris: ["https://claude.ai/api/mcp/auth_callback"], client_name: "Claude" } as never);
   let url = "";
-  await p.authorize(client, { codeChallenge: "c", redirectUri: "https://claude.ai/api/mcp/auth_callback", scopes: ["finance:read"] }, { redirect: (_c: number, u: string) => { url = u; } } as never);
+  await p.authorize(client, { codeChallenge: "c", redirectUri: "https://claude.ai/api/mcp/auth_callback", scopes: ["finance:read"] }, { redirect: (_c: number, u: string) => { url = u; }, cookie: () => {} } as never);
   const reqId = new URL(url, "http://x").searchParams.get("req")!;
   assert.deepEqual(p.pendingInfo(reqId), { client_name: "Claude", redirect_to: "https://claude.ai/api/mcp/auth_callback", scopes: ["finance:read"] });
   assert.equal(p.pendingInfo("nope"), null);
@@ -104,7 +104,7 @@ test("oauth: a sign-in request burns after 3 wrong passphrases; an IP locks afte
   const client = await p.clientsStore.registerClient!({ redirect_uris: ["http://127.0.0.1:1/cb"] } as never);
   const pending = async () => {
     let url = "";
-    await p.authorize(client, { codeChallenge: "c", redirectUri: "http://127.0.0.1:1/cb" }, { redirect: (_c: number, u: string) => { url = u; } } as never);
+    await p.authorize(client, { codeChallenge: "c", redirectUri: "http://127.0.0.1:1/cb" }, { redirect: (_c: number, u: string) => { url = u; }, cookie: () => {} } as never);
     return new URL(url, "http://x").searchParams.get("req")!;
   };
   const r1 = await pending();
@@ -134,11 +134,33 @@ test("oauth: authorize answers 400 itself for a disallowed redirect instead of b
   const p = new oauth.SqliteOAuthProvider(db);
   const client = await p.clientsStore.registerClient!({ redirect_uris: ["https://claude.ai/api/mcp/auth_callback"], client_name: "Claude" } as never);
   let status = 0, redirected = "", body = "";
-  const res = { redirect: (_c: number, u: string) => { redirected = u; }, status(c: number) { status = c; return this; }, type() { return this; }, send(b: string) { body = b; } } as never;
+  const res = { redirect: (_c: number, u: string) => { redirected = u; }, cookie: () => {}, status(c: number) { status = c; return this; }, type() { return this; }, send(b: string) { body = b; } } as never;
   // Simulate a client whose registered URI predates a stricter allowlist: the SDK would pass it through.
   await p.authorize(client, { codeChallenge: "c", redirectUri: "https://claude.ai/legacy/callback" }, res);
   assert.equal(status, 400);
   assert.equal(redirected, "");
   assert.match(body, /not allowed/);
+  db.close();
+});
+
+test("oauth: a pending request is bound to the browser that started it", async () => {
+  const db = dbmod.openDb();
+  const p = new oauth.SqliteOAuthProvider(db);
+  const client = await p.clientsStore.registerClient!({ redirect_uris: ["https://claude.ai/api/mcp/auth_callback"], client_name: "Claude" } as never);
+  let url = "", cookieName = "", cookieVal = "", cookieOpts: Record<string, unknown> = {};
+  const res = { redirect: (_c: number, u: string) => { url = u; }, cookie: (n: string, v: string, o: Record<string, unknown>) => { cookieName = n; cookieVal = v; cookieOpts = o; } } as never;
+  await p.authorize(client, { codeChallenge: "c", redirectUri: "https://claude.ai/api/mcp/auth_callback" }, res);
+  const reqId = new URL(url, "http://x").searchParams.get("req")!;
+  assert.equal(cookieName, oauth.BIND_COOKIE);
+  assert.ok(cookieVal.length >= 40);
+  assert.equal(cookieOpts.httpOnly, true);
+  assert.equal(cookieOpts.sameSite, "lax");
+  assert.equal(cookieOpts.path, "/login");
+  assert.equal(p.bindMatches(reqId, cookieVal), true);
+  assert.equal(p.bindMatches(reqId, "forged"), false);
+  assert.equal(p.bindMatches(reqId, undefined), false);
+  assert.equal(p.bindMatches("someone-elses-request-id", cookieVal), false);
+  assert.equal(oauth.cookieValue(`a=1; ${oauth.BIND_COOKIE}=${cookieVal}; b=2`, oauth.BIND_COOKIE), cookieVal);
+  assert.equal(oauth.cookieValue(undefined, oauth.BIND_COOKIE), undefined);
   db.close();
 });

@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS tokens (
 );
 -- Hosted mode only: OAuth 2.1 authorization server state (see oauth.ts)
 CREATE TABLE IF NOT EXISTS oauth_clients (client_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS oauth_pending (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, params TEXT NOT NULL, expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS oauth_pending (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, params TEXT NOT NULL, expires_at INTEGER NOT NULL, bind_hash TEXT);
 CREATE TABLE IF NOT EXISTS oauth_codes (code_hash TEXT PRIMARY KEY, client_id TEXT NOT NULL, code_challenge TEXT NOT NULL, redirect_uri TEXT NOT NULL, scopes TEXT, resource TEXT, expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS oauth_tokens (token_hash TEXT PRIMARY KEY, kind TEXT NOT NULL, client_id TEXT NOT NULL, scopes TEXT, resource TEXT, expires_at INTEGER NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS login_failures (ts INTEGER NOT NULL, ip TEXT NOT NULL, req_id TEXT NOT NULL);
@@ -144,6 +144,9 @@ export function openDb(file: string = DB_PATH) {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA);
+  // Additive migrations for databases created by earlier versions.
+  const pendingCols = (db.pragma("table_info(oauth_pending)") as { name: string }[]).map((c) => c.name);
+  if (!pendingCols.includes("bind_hash")) db.exec("ALTER TABLE oauth_pending ADD COLUMN bind_hash TEXT");
   const now = () => new Date().toISOString();
 
   const stmts = {
