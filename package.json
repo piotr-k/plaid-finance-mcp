@@ -1,0 +1,46 @@
+{
+  "name": "plaid-finance-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only Plaid MCP server for household finances: local (stdio) or hosted (OAuth, webhooks)",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/server.js",
+    "start:http": "node dist/http-server.js",
+    "dev:http": "tsx src/http-server.ts",
+    "link": "tsx src/link.ts",
+    "cli": "tsx src/cli.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "better-sqlite3": "^13.2.0",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "jose": "^6.2.18",
+    "plaid": "^51.0.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/piotr-k/plaid-finance-mcp.git"
+  },
+  "homepage": "https://github.com/piotr-k/plaid-finance-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/piotr-k/plaid-finance-mcp/issues"
+  }
+}

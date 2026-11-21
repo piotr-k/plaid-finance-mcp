@@ -1,0 +1,6 @@
+{
+  "1234": "Checking",
+  "5678": "Savings",
+  "9012": { "name": "Rewards Card", "promo_end": "2027-06-30" },
+  "3456": "Travel Card"
+}

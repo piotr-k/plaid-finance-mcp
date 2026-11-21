@@ -1,0 +1,38 @@
+# Fly.io config for the hosted Plaid MCP server.
+# Copy to fly.toml (git-ignored) and replace <app> in both places below.
+# Secrets are set with `fly secrets set`, never here: PLAID_CLIENT_ID, PLAID_SECRET_PRODUCTION,
+# TOKEN_ENCRYPTION_KEY, MCP_PASSPHRASE.
+app = "<app>"
+primary_region = "<region>"   # e.g. ord, lax, lhr; list with `fly platform regions`
+
+[build]
+
+[env]
+  PLAID_ENV = "production"      # or "sandbox" to test the hosted flow with fake banks
+  TOKEN_STORE = "db"
+  DATA_DIR = "/data"
+  PORT = "8080"
+  PUBLIC_URL = "https://<app>.fly.dev"
+  APP_NAME = "Finance MCP"      # shown on Plaid's Link screen and the login page
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"     # stay up so Plaid webhooks and scheduled syncs are received
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[mounts]]
+  source = "plaid_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"         # fits inside Fly's free monthly allowance
+  memory = "256mb"
