@@ -125,7 +125,9 @@ The same code runs as an always-on HTTPS service. What changes:
 - Access tokens are AES-256-GCM encrypted in SQLite with `TOKEN_ENCRYPTION_KEY`.
 - `/plaid/webhook` verifies Plaid's signature and syncs as banks post updates. A daily sync at 09:00 UTC
   catches anything missed.
-- Three extra tools: `start_link`, `link_status`, `unlink`.
+- Two extra tools, `start_link` and `link_status`. A third, `unlink`, is off by default because it is
+  destructive and callable by the model; set `HOSTED_UNLINK=true` to expose it, or unlink from the
+  machine with `fly ssh console -C "node dist/cli.js unlink <item_id>"`.
 - Linking the same bank twice is fine when it is a different login, for example a second person's own
   account. A new connection is removed as a duplicate only when one of its account masks is already
   linked at that bank. The server log says which check fired (`duplicate check: ...`).
@@ -201,14 +203,24 @@ refresh, which Plaid bills separately.
 - Tool output and logs never include `access_token`, `link_token`, `public_token` or API keys; the smoke
   test asserts this.
 - Hosted mode: OAuth 2.1 with PKCE, hashed authorization codes and tokens, 30-day access and 90-day refresh
-  tokens, passphrase lockout after five failures per IP, Plaid webhook JWT verification with a five-minute
-  replay window.
+  tokens. Clients may only register redirect URIs matching `ALLOWED_REDIRECTS`: by default the exact claude.ai
+  and claude.com callback URLs, plus loopback for Claude Code. The sign-in page names the client and the exact
+  address that will receive the code,
+  so you can refuse a request you did not start, and it cannot be framed. Wrong passphrases are limited to
+  3 per sign-in request, 5 per IP and 60 overall per 15 minutes, counted in SQLite so a restart does not
+  reset them. The passphrase must be at least 8 characters; use 16 or more. Plaid webhooks are verified
+  (ES256, five-minute window) and key lookups for unknown key ids are negative-cached and rate-limited.
+- `TRUST_PROXY` defaults to 1 on Fly and 0 elsewhere; set it to your proxy hop count if you run behind
+  another reverse proxy, otherwise throttling cannot see real client addresses.
+- Bearer tokens need the `finance:read` scope; the link tools additionally need `finance:link`. Live balance
+  calls are limited to one per bank per minute because Plaid bills them.
 - If a token is ever exposed, call `/item/access_token/invalidate` and rotate the secret in the Plaid
   Dashboard.
 
 ## Customizing
 
 - The name shown on Plaid's Link screen and the login page: `APP_NAME` (default "Finance MCP").
+- OAuth and hardening knobs: `ALLOWED_REDIRECTS`, `TRUST_PROXY`, `HOSTED_UNLINK` (see `.env.example`).
 - Friendly account names and promo dates: `accounts.json`.
 - History requested at link time: `TRANSACTION_DAYS` in `.env` (default 365, max 730, fixed per bank once
   linked).

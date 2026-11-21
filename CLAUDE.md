@@ -28,6 +28,14 @@ deployment-specific notes belong in `CLAUDE.local.md` (also git-ignored), not he
   own login) is kept. Every outcome logs a `duplicate check:` line. Accounts without a mask never count.
 - `webhooks.ts` verifies the Plaid JWT (ES256, kid-cached key, 5-min max age, raw-body sha256) and
   dispatches TRANSACTIONS/ITEM/LIABILITIES/LINK codes; work is serialized through `enqueue`.
+- Hardening (2026-11-21, after a /cso audit): registration allowlist `redirectUriAllowed` (exact https URLs via `ALLOWED_REDIRECTS`,
+  loopback hosts any path) + consent page naming client and exact redirect target + CSP frame-ancestors none;
+  `authorize()` answers 400 itself for a disallowed URL (throwing would make the SDK redirect there); login
+  failures in SQLite `login_failures` (3 per request, 5 per IP, 60 global per 15 min); `clientIp` trusts
+  Fly-Client-IP only when FLY_APP_NAME is set; `TRUST_PROXY` defaults 1 on Fly, 0 elsewhere; /mcp runs bearer
+  auth (requiredScopes finance:read) before JSON parsing and link tools need finance:link; webhook `keyFor`
+  validates kid, negative-caches only definitive failures, coalesces, 20 lookups/min; hosted `unlink` gated by
+  `HOSTED_UNLINK`; get_balances one live call per item per minute; client_name capped at 100 chars. Keep these when touching oauth.ts or webhooks.ts.
 - `cli.ts` items/sync/export/unlink/reset-login/export-items.
 - No redirect URI: production rejects http://localhost redirect URIs (HTTPS only), so Hosted Link is the
   only laptop-friendly way to link OAuth banks. Do not reintroduce a local Link page without HTTPS.
@@ -66,3 +74,5 @@ deployment-specific notes belong in `CLAUDE.local.md` (also git-ignored), not he
   can link their own account at an already-linked bank. Acceptance re-run: PASS. Deployed.
 - 2026-11-21: Repo prepared for open source: personal identifiers scrubbed, `fly.example.toml`, MIT license,
   README rewritten for first-time users, local notes moved to `CLAUDE.local.md`.
+- 2026-11-21: /cso audit (run 1795271036741-7c28a7cf1e454f22) found: client-blind consent page with open registration (high), spoofable/in-memory login throttle (medium), webhook key-lookup amplification (low). All fixed the same day: redirect-host allowlist, consent page naming client + redirect host, CSP/XFO, SQLite-backed 3/5/20 failure budgets, Fly header trusted only on Fly, TRUST_PROXY, kid validation + negative cache + coalescing + 5/min lookups, empty-body 401, hosted unlink behind HOSTED_UNLINK. Verified by 16 unit tests, sandbox smoke and a local hosted boot with curl.
+- 2026-11-21 (later): adversarial subagent review of the fixes found 7 issues; all addressed: exact-URL redirect allowlist (ALLOWED_REDIRECTS), authorize() 400 instead of error-redirect, TRUST_PROXY default 0 off-Fly, global login budget 60, /mcp auth before JSON parsing, requiredScopes finance:read + finance:link for link tools, get_balances 1/min/item, webhook negative cache only for definitive Plaid answers (20 lookups/min), client_name cap. Live tokens all carry both scopes, so the scope checks do not break existing sessions. 17/17 tests, smoke OK, acceptance PASS.

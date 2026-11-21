@@ -5,30 +5,76 @@ import type { OAuthServerProvider, AuthorizationParams } from "@modelcontextprot
 import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { OAuthClientInformationFull, OAuthTokens, OAuthTokenRevocationRequest } from "@modelcontextprotocol/sdk/shared/auth.js";
-import { InvalidGrantError, InvalidClientError, InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
+import { InvalidGrantError, InvalidClientError, InvalidClientMetadataError, InvalidTokenError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type { DB } from "./db.js";
-import { APP_NAME, mcpPassphrase, log } from "./config.js";
+import { APP_NAME, ALLOWED_REDIRECTS, ON_FLY, mcpPassphrase, log } from "./config.js";
 
 // A minimal OAuth 2.1 authorization server for exactly one human: you.
 // Clients (claude.ai, Claude Code) register dynamically, start the PKCE flow,
 // and land on /login, where the only credential is the passphrase in
 // MCP_PASSPHRASE. Codes and tokens are random, stored hashed in SQLite.
+//
+// Two things keep a stranger from turning that passphrase into their own
+// tokens: registration only accepts redirect_uris matching ALLOWED_REDIRECTS,
+// and the login page names the client and the redirect host it will send the
+// code to, so the owner can tell their own Claude sign-in from someone else's.
 
 const ACCESS_TTL_S = 30 * 24 * 3600;
 const REFRESH_TTL_S = 90 * 24 * 3600;
 const CODE_TTL_S = 10 * 60;
 const PENDING_TTL_S = 15 * 60;
+// Login throttling: all three windows are 15 minutes and all counters live in SQLite,
+// so a restart does not reset them.
+const FAIL_WINDOW_S = 15 * 60;
+const MAX_FAILS_PER_IP = 5;
+const MAX_FAILS_GLOBAL = 60; // high enough that locking the owner out needs many addresses, low enough to make guessing pointless
+const MAX_FAILS_PER_REQUEST = 3;
 export const SCOPES = ["finance:read", "finance:link"];
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 const token = () => randomBytes(32).toString("base64url");
 const now = () => Math.floor(Date.now() / 1000);
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+const MAX_CLIENT_NAME = 100;
+
+/**
+ * Is this redirect_uri acceptable for a client of this server? Loopback entries match any port and
+ * path over http or https; every other entry must match the URL's origin and path exactly (query and
+ * fragment are not allowed), so only the registered callback on that host can receive a code.
+ */
+export function redirectUriAllowed(uri: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (u.username || u.password) return false;
+  const host = u.hostname.toLowerCase(); // IPv6 literals come back bracketed already
+  if (LOOPBACK.has(host)) return ALLOWED_REDIRECTS.some((e) => e.toLowerCase() === host) && (u.protocol === "http:" || u.protocol === "https:");
+  if (u.protocol !== "https:" || u.search || u.hash) return false;
+  const exact = u.origin.toLowerCase() + u.pathname;
+  return ALLOWED_REDIRECTS.some((e) => {
+    try {
+      const a = new URL(e);
+      return a.protocol === "https:" && a.origin.toLowerCase() + a.pathname === exact;
+    } catch {
+      return false;
+    }
+  });
+}
 
 type Pending = AuthorizationParams & { clientId: string };
 
+export interface PendingInfo {
+  client_name: string;
+  redirect_to: string; // origin + path the code will be sent to
+  scopes: string[];
+}
+
 export class SqliteOAuthProvider implements OAuthServerProvider {
   readonly clientsStore: OAuthRegisteredClientsStore;
-  private attempts = new Map<string, { n: number; until: number }>();
 
   constructor(private db: DB) {
     const raw = db.raw;
@@ -39,10 +85,18 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
       },
       registerClient(client) {
         const full = { ...(client as OAuthClientInformationFull) };
+        const uris = full.redirect_uris ?? [];
+        if (!uris.length) throw new InvalidClientMetadataError("redirect_uris is required");
+        if (typeof full.client_name === "string" && full.client_name.length > MAX_CLIENT_NAME) throw new InvalidClientMetadataError(`client_name must be at most ${MAX_CLIENT_NAME} characters`);
+        const bad = uris.filter((u) => !redirectUriAllowed(u));
+        if (bad.length) {
+          log(`oauth: rejected registration (${full.client_name ?? "unnamed"}): redirect host not allowed: ${bad.map((u) => safeHost(u)).join(",")}`);
+          throw new InvalidClientMetadataError(`redirect_uri not allowed; permitted: ${ALLOWED_REDIRECTS.join(", ")}`);
+        }
         full.client_id ||= randomUUID();
         full.client_id_issued_at ||= now();
         raw.prepare(`INSERT INTO oauth_clients (client_id, data, created_at) VALUES (?, ?, ?)`).run(full.client_id, JSON.stringify(full), new Date().toISOString());
-        log(`oauth: registered client ${full.client_id} (${full.client_name ?? "unnamed"}) redirect_uris=${full.redirect_uris.join(",")}`);
+        log(`oauth: registered client ${full.client_id} (${full.client_name ?? "unnamed"}) redirect_uris=${uris.join(",")}`);
         return full;
       },
     };
@@ -50,6 +104,14 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
 
   /** Step 1: park the request and send the user to the login page. */
   async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response): Promise<void> {
+    // The SDK already checks redirect_uri against the client's registration; this keeps a
+    // client registered under an older allowlist from using a now-disallowed URL. Answer
+    // directly: throwing here would make the SDK redirect the error to that very URL.
+    if (!redirectUriAllowed(params.redirectUri)) {
+      log(`oauth: refused authorize for client ${client.client_id}: redirect_uri not allowed (${safeHost(params.redirectUri)})`);
+      res.status(400).type("html").send(PAGE(`<p class="err">This client's redirect address is not allowed by this server.</p>`));
+      return;
+    }
     const id = token();
     const pending: Pending = { ...params, clientId: client.client_id, resource: params.resource };
     this.db.raw
@@ -58,10 +120,26 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
     res.redirect(302, `/login?req=${encodeURIComponent(id)}`);
   }
 
+  /** What the login page shows so the owner can recognise (or refuse) the request. */
+  pendingInfo(reqId: string): PendingInfo | null {
+    const row = this.db.raw.prepare(`SELECT client_id, params, expires_at FROM oauth_pending WHERE id = ?`).get(reqId) as
+      | { client_id: string; params: string; expires_at: number }
+      | undefined;
+    if (!row || row.expires_at < now()) return null;
+    const p = JSON.parse(row.params) as Pending;
+    const client = this.clientsStore.getClient(row.client_id) as OAuthClientInformationFull | undefined;
+    return { client_name: client?.client_name ?? "unnamed client", redirect_to: safeTarget(p.redirectUri), scopes: p.scopes ?? SCOPES };
+  }
+
+  private failures(where: string, arg: string | number): number {
+    return (this.db.raw.prepare(`SELECT COUNT(*) AS n FROM login_failures WHERE ts > ? AND ${where}`).get(now() - FAIL_WINDOW_S, arg) as { n: number }).n;
+  }
+
   /** Step 2 (called from the /login POST): passphrase ok → issue a code and redirect back to the client. */
   completeLogin(reqId: string, ip: string, passphrase: string): { redirect: string } | { error: string; status: number } {
-    const a = this.attempts.get(ip);
-    if (a && a.n >= 5 && a.until > now()) return { error: "Too many attempts. Try again in 15 minutes.", status: 429 };
+    if (this.failures("ip = ?", ip) >= MAX_FAILS_PER_IP || this.failures("1 = ?", 1) >= MAX_FAILS_GLOBAL) {
+      return { error: "Too many attempts. Try again in 15 minutes.", status: 429 };
+    }
     const row = this.db.raw.prepare(`SELECT client_id, params, expires_at FROM oauth_pending WHERE id = ?`).get(reqId) as
       | { client_id: string; params: string; expires_at: number }
       | undefined;
@@ -70,12 +148,14 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
     const given = Buffer.from(passphrase);
     const ok = expected.length === given.length && timingSafeEqual(expected, given);
     if (!ok) {
-      const cur = this.attempts.get(ip) ?? { n: 0, until: 0 };
-      this.attempts.set(ip, { n: cur.n + 1, until: now() + 15 * 60 });
+      this.db.raw.prepare(`INSERT INTO login_failures (ts, ip, req_id) VALUES (?, ?, ?)`).run(now(), ip, reqId);
       log(`oauth: wrong passphrase from ${ip}`);
+      if (this.failures("req_id = ?", reqId) >= MAX_FAILS_PER_REQUEST) {
+        this.db.raw.prepare(`DELETE FROM oauth_pending WHERE id = ?`).run(reqId); // burn the request; the client must start over
+        return { error: "Too many wrong attempts for this sign-in. Start again from Claude.", status: 400 };
+      }
       return { error: "Wrong passphrase.", status: 401 };
     }
-    this.attempts.delete(ip);
     const p = JSON.parse(row.params) as Pending & { resource?: string };
     const code = token();
     this.db.raw
@@ -146,44 +226,89 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
     this.db.raw.prepare(`DELETE FROM oauth_tokens WHERE token_hash = ?`).run(sha256(request.token));
   }
 
-  /** Drop expired codes, pending requests and tokens. */
+  /** Drop expired codes, pending requests, tokens and old failure records. */
   cleanup(): void {
     const t = now();
     this.db.raw.prepare(`DELETE FROM oauth_pending WHERE expires_at < ?`).run(t);
     this.db.raw.prepare(`DELETE FROM oauth_codes WHERE expires_at < ?`).run(t);
     this.db.raw.prepare(`DELETE FROM oauth_tokens WHERE expires_at < ?`).run(t);
+    this.db.raw.prepare(`DELETE FROM login_failures WHERE ts < ?`).run(t - FAIL_WINDOW_S);
   }
 }
 
+function safeHost(uri: string): string {
+  try {
+    return new URL(uri).host;
+  } catch {
+    return "invalid-url";
+  }
+}
+/** origin + path only: enough to recognise the callback, no query noise. */
+function safeTarget(uri: string): string {
+  try {
+    const u = new URL(uri);
+    return u.origin + u.pathname;
+  } catch {
+    return "invalid-url";
+  }
+}
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
 const PAGE = (body: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in · ${APP_NAME}</title>
+<title>Sign in · ${esc(APP_NAME)}</title>
 <style>body{font:16px/1.5 -apple-system,system-ui,sans-serif;max-width:420px;margin:12vh auto;padding:0 20px;color:#111}
 input{font:inherit;width:100%;padding:10px 12px;border:1px solid #bbb;border-radius:8px;box-sizing:border-box}
 button{font:inherit;margin-top:12px;padding:10px 18px;border-radius:8px;border:0;background:#111;color:#fff;width:100%}
-.err{color:#b00020;margin:8px 0}</style></head><body>${body}</body></html>`;
+.err{color:#b00020;margin:8px 0}.who{background:#f3f3f3;border-radius:8px;padding:10px 12px;margin:12px 0}.who b{display:block}</style></head><body>${body}</body></html>`;
+
+/** The client IP for throttling: the Fly header only on Fly, otherwise what Express derived via trust proxy. */
+export function clientIp(req: Request): string {
+  const fly = req.headers["fly-client-ip"];
+  if (ON_FLY && typeof fly === "string" && fly) return fly;
+  return req.ip ?? "unknown";
+}
+
+const REQ_ID = /^[A-Za-z0-9_-]{20,64}$/;
+const FAIL_DELAY_MS = 400;
 
 /** Express routes for the login page used by SqliteOAuthProvider.authorize. */
 export function loginRouter(provider: SqliteOAuthProvider): Router {
   const r = express.Router();
   r.use(express.urlencoded({ extended: false }));
-  const form = (req: string, err = "") =>
-    PAGE(`<h2>${APP_NAME}</h2><p>Claude is asking to connect to your bank data. Enter the passphrase to allow it.</p>
-    ${err ? `<p class="err">${err}</p>` : ""}
-    <form method="post" action="/login"><input type="hidden" name="req" value="${req}">
-    <input type="password" name="passphrase" placeholder="Passphrase" autofocus autocomplete="current-password" required>
-    <button type="submit">Allow</button></form>`);
-  r.get("/login", (req: Request, res: Response) => {
-    const id = typeof req.query.req === "string" ? req.query.req : "";
+  const headers = (res: Response) => {
     res.setHeader("Cache-Control", "no-store");
-    res.status(id ? 200 : 400).send(id ? form(encodeURIComponent(id)) : PAGE("<p>Missing request.</p>"));
+    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+  };
+  const form = (reqId: string, info: PendingInfo, err = "") =>
+    PAGE(`<h2>${esc(APP_NAME)}</h2>
+    <div class="who"><b>${esc(info.client_name)}</b>wants access to your bank data (${esc(info.scopes.join(", "))}).<br>After you allow it, the sign-in code is sent to <b>${esc(info.redirect_to)}</b>.</div>
+    <p>If you did not just start this from Claude, close this page.</p>
+    ${err ? `<p class="err">${esc(err)}</p>` : ""}
+    <form method="post" action="/login"><input type="hidden" name="req" value="${esc(reqId)}">
+    <input type="password" name="passphrase" placeholder="Passphrase" autofocus autocomplete="current-password" required>
+    <button type="submit">Allow ${esc(info.client_name)}</button></form>`);
+  const expired = () => PAGE(`<p class="err">This sign-in link is missing or has expired. Start again from Claude.</p>`);
+  r.get("/login", (req: Request, res: Response) => {
+    headers(res);
+    const id = typeof req.query.req === "string" && REQ_ID.test(req.query.req) ? req.query.req : "";
+    const info = id ? provider.pendingInfo(id) : null;
+    if (!info) return res.status(400).send(expired());
+    res.status(200).send(form(id, info));
   });
   r.post("/login", (req: Request, res: Response) => {
-    const body = req.body as { req?: string; passphrase?: string };
-    const ip = (req.headers["fly-client-ip"] as string | undefined) ?? req.ip ?? "unknown";
-    const out = provider.completeLogin(decodeURIComponent(body.req ?? ""), ip, body.passphrase ?? "");
-    res.setHeader("Cache-Control", "no-store");
+    headers(res);
+    const body = (req.body ?? {}) as { req?: unknown; passphrase?: unknown };
+    const id = typeof body.req === "string" && REQ_ID.test(body.req) ? body.req : "";
+    const passphrase = typeof body.passphrase === "string" ? body.passphrase : "";
+    if (!id) return res.status(400).send(expired());
+    const out = provider.completeLogin(id, clientIp(req), passphrase);
     if ("redirect" in out) return res.redirect(302, out.redirect);
-    res.status(out.status).send(out.status === 401 && body.req ? form(body.req, out.error) : PAGE(`<p class="err">${out.error}</p>`));
+    const info = out.status === 401 ? provider.pendingInfo(id) : null;
+    setTimeout(() => res.status(out.status).send(info ? form(id, info, out.error) : PAGE(`<p class="err">${esc(out.error)}</p>`)), FAIL_DELAY_MS);
   });
   return r;
 }

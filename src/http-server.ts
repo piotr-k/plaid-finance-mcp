@@ -4,7 +4,7 @@ import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
-import { APP_NAME, PLAID_ENV, PORT, PUBLIC_URL, WEBHOOK_URL, DATA_DIR, TOKEN_STORE, mcpPassphrase, tokenEncryptionKey, log } from "./config.js";
+import { APP_NAME, PLAID_ENV, PORT, PUBLIC_URL, WEBHOOK_URL, DATA_DIR, TOKEN_STORE, TRUST_PROXY, HOSTED_UNLINK, mcpPassphrase, tokenEncryptionKey, log } from "./config.js";
 import { openDb } from "./db.js";
 import { buildServer } from "./tools.js";
 import { SqliteOAuthProvider, loginRouter, SCOPES } from "./oauth.js";
@@ -32,15 +32,15 @@ const issuer = new URL(PUBLIC_URL);
 const mcpUrl = new URL("/mcp", PUBLIC_URL);
 
 const app = express();
-app.set("trust proxy", 1); // exactly one hop: the Fly proxy
+app.set("trust proxy", TRUST_PROXY); // hops in front of us: 1 on Fly; set TRUST_PROXY=0 on a bare VM
 app.disable("x-powered-by");
 
 // Webhook first, with the raw body: the signature covers the exact bytes.
 app.post("/plaid/webhook", express.raw({ type: "*/*", limit: "1mb" }), async (req, res) => {
   try {
-    await verifyPlaidWebhook(req.body as Buffer, req.header("plaid-verification"));
+    await verifyPlaidWebhook(req.body, req.header("plaid-verification")); // rejects empty/non-Buffer bodies
   } catch (e) {
-    log(`webhook rejected: ${e instanceof Error ? e.message : e}`);
+    log(`webhook rejected: ${describeError(e)}`);
     return res.status(401).end();
   }
   res.status(200).end(); // acknowledge within the 10s window; work continues async
@@ -65,13 +65,13 @@ app.use(
 );
 app.use(loginRouter(provider));
 
-app.use(express.json({ limit: "4mb" }));
-const auth = requireBearerAuth({ verifier: provider, resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpUrl) });
+// Bearer auth runs before the JSON body is parsed, so anonymous requests cost nothing but a header read.
+const auth = requireBearerAuth({ verifier: provider, requiredScopes: ["finance:read"], resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpUrl) });
 
 // Stateless Streamable HTTP: one short-lived server+transport per request. No
 // session bookkeeping to lose on a restart, and no SSE streams to hold open.
-app.all("/mcp", auth, async (req, res) => {
-  const server = buildServer(db, { hosted: true });
+app.all("/mcp", auth, express.json({ limit: "4mb" }), async (req, res) => {
+  const server = buildServer(db, { hosted: true, scopes: req.auth?.scopes ?? [] });
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on("close", () => {
     void transport.close();
@@ -150,4 +150,4 @@ function schedule() {
 importIfPresent();
 reconcileItemsOnBoot();
 schedule();
-app.listen(PORT, "0.0.0.0", () => log(`hosted plaid-finance ready on :${PORT} (${PLAID_ENV}), public ${PUBLIC_URL}, webhook ${WEBHOOK_URL}`));
+app.listen(PORT, "0.0.0.0", () => log(`hosted plaid-finance ready on :${PORT} (${PLAID_ENV}), public ${PUBLIC_URL}, webhook ${WEBHOOK_URL}, unlink tool ${HOSTED_UNLINK ? "enabled" : "disabled (HOSTED_UNLINK=true to enable)"}`));

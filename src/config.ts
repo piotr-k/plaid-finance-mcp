@@ -69,8 +69,43 @@ export const PORT = Number(process.env.PORT ?? 8080);
 /** Public HTTPS origin of the hosted server, e.g. https://my-app.fly.dev (no trailing slash). */
 export const PUBLIC_URL = (process.env.PUBLIC_URL ?? "").trim().replace(/\/$/, "");
 export const WEBHOOK_URL = PUBLIC_URL ? `${PUBLIC_URL}/plaid/webhook` : undefined;
-/** Passphrase typed on the OAuth login page. Hosted mode refuses to start without it. */
-export const mcpPassphrase = () => required("MCP_PASSPHRASE");
+/**
+ * Passphrase typed on the OAuth login page. Hosted mode refuses to start without it,
+ * or with fewer than 8 characters; under 16 it logs a warning once.
+ */
+let passphraseChecked = false;
+export const mcpPassphrase = () => {
+  const p = required("MCP_PASSPHRASE");
+  if (!passphraseChecked) {
+    passphraseChecked = true;
+    if (p.length < 8) throw new Error("MCP_PASSPHRASE must be at least 8 characters; 16 or more recommended");
+    if (p.length < 16) log("warning: MCP_PASSPHRASE is shorter than 16 characters; it is the only credential protecting this server");
+  }
+  return p;
+};
+/** Set by the Fly runtime; when present the Fly-Client-IP header is trustworthy. */
+export const ON_FLY = Boolean(process.env.FLY_APP_NAME);
+/** Express trust-proxy setting: proxy hops in front of the app. Defaults to 1 on Fly and 0 anywhere else. */
+export const TRUST_PROXY: number | boolean = (() => {
+  const v = (process.env.TRUST_PROXY ?? (ON_FLY ? "1" : "0")).trim().toLowerCase();
+  if (v === "true") return true;
+  if (v === "false") return false;
+  return Number.isFinite(Number(v)) ? Number(v) : 1;
+})();
+/**
+ * Where an OAuth client may send authorization codes. Each comma-separated entry is either an exact
+ * https URL (matched on origin + path, so an open redirect elsewhere on that host does not help an
+ * attacker) or a bare loopback hostname (any port and path, for Claude Code's local callback).
+ * Defaults cover claude.ai, claude.com and loopback.
+ */
+export const ALLOWED_REDIRECTS: string[] = (
+  process.env.ALLOWED_REDIRECTS ?? "https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,localhost,127.0.0.1,[::1]"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+/** Hosted mode exposes the destructive `unlink` tool only when this is "true"; otherwise use the CLI. */
+export const HOSTED_UNLINK = (process.env.HOSTED_UNLINK ?? "").trim().toLowerCase() === "true";
 
 /** Log to stderr only. stdout is the MCP transport and must stay clean. */
 export function log(...args: unknown[]): void {

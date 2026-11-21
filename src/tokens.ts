@@ -14,13 +14,13 @@ const db = () => (dbConn ??= openDb());
 
 function encrypt(plain: string) {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", tokenEncryptionKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", tokenEncryptionKey(), iv, { authTagLength: 16 });
   const ct = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
   return { ciphertext: ct.toString("base64"), iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64") };
 }
 
 function decrypt(row: { ciphertext: string; iv: string; tag: string }): string {
-  const d = createDecipheriv("aes-256-gcm", tokenEncryptionKey(), Buffer.from(row.iv, "base64"));
+  const d = createDecipheriv("aes-256-gcm", tokenEncryptionKey(), Buffer.from(row.iv, "base64"), { authTagLength: 16 });
   d.setAuthTag(Buffer.from(row.tag, "base64"));
   return Buffer.concat([d.update(Buffer.from(row.ciphertext, "base64")), d.final()]).toString("utf8");
 }
