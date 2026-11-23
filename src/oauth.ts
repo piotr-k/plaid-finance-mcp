@@ -31,7 +31,8 @@ const FAIL_WINDOW_S = 15 * 60;
 const MAX_FAILS_PER_IP = 5;
 const MAX_FAILS_GLOBAL = 60; // high enough that locking the owner out needs many addresses, low enough to make guessing pointless
 const MAX_FAILS_PER_REQUEST = 3;
-export const BIND_COOKIE = "mcp_authorize";
+/** One cookie per pending request, so two sign-ins started in the same browser (claude.ai does this) never clobber each other. */
+export const bindCookieName = (reqId: string) => `mcp_authorize_${reqId.slice(0, 16)}`;
 export const SCOPES = ["finance:read", "finance:link"];
 /** A client that asks for no scopes gets all of them (the usual OAuth convention); unknown scopes are dropped. */
 export function grantedScopes(requested: string[] | undefined): string[] {
@@ -126,7 +127,7 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
     this.db.raw
       .prepare(`INSERT INTO oauth_pending (id, client_id, params, expires_at, bind_hash) VALUES (?, ?, ?, ?, ?)`)
       .run(id, client.client_id, JSON.stringify({ ...pending, resource: params.resource?.toString() }), now() + PENDING_TTL_S, sha256(bind));
-    res.cookie(BIND_COOKIE, bind, { httpOnly: true, sameSite: "lax", secure: PUBLIC_URL.startsWith("https://"), path: "/login", maxAge: PENDING_TTL_S * 1000 });
+    res.cookie(bindCookieName(id), bind, { httpOnly: true, sameSite: "lax", secure: PUBLIC_URL.startsWith("https://"), path: "/login", maxAge: PENDING_TTL_S * 1000 });
     res.redirect(302, `/login?req=${encodeURIComponent(id)}`);
   }
 
@@ -324,7 +325,7 @@ export function loginRouter(provider: SqliteOAuthProvider): Router {
     <button type="submit">Allow ${esc(info.client_name)}</button></form>`);
   const expired = () => PAGE(`<p class="err">This sign-in link is missing or has expired. Start again from Claude.</p>`);
   const wrongBrowser = () => PAGE(`<p class="err">This sign-in must be finished in the browser where it was started. If you were sent this link, do not enter your passphrase. Start again from Claude.</p>`);
-  const bound = (req: Request, id: string) => provider.bindMatches(id, cookieValue(req.headers.cookie, BIND_COOKIE));
+  const bound = (req: Request, id: string) => provider.bindMatches(id, cookieValue(req.headers.cookie, bindCookieName(id)));
   r.get("/login", (req: Request, res: Response) => {
     headers(res);
     const id = typeof req.query.req === "string" && REQ_ID.test(req.query.req) ? req.query.req : "";
@@ -342,10 +343,13 @@ export function loginRouter(provider: SqliteOAuthProvider): Router {
     const id = typeof body.req === "string" && REQ_ID.test(body.req) ? body.req : "";
     const passphrase = typeof body.passphrase === "string" ? body.passphrase : "";
     if (!id) return res.status(400).send(expired());
-    if (!bound(req, id)) return res.status(400).send(wrongBrowser()); // checked before the passphrase is even compared
+    if (!bound(req, id)) {
+      log(`oauth: POST /login refused: pending request ${provider.pendingInfo(id) ? "has no matching browser cookie" : "unknown or expired"} (from ${clientIp(req)})`);
+      return res.status(400).send(wrongBrowser()); // checked before the passphrase is even compared
+    }
     const out = provider.completeLogin(id, clientIp(req), passphrase);
     if ("redirect" in out) {
-      res.clearCookie(BIND_COOKIE, { path: "/login" });
+      res.clearCookie(bindCookieName(id), { path: "/login" });
       return res.redirect(302, out.redirect);
     }
     const info = out.status === 401 ? provider.pendingInfo(id) : null;

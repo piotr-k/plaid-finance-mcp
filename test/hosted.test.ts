@@ -151,7 +151,8 @@ test("oauth: a pending request is bound to the browser that started it", async (
   const res = { redirect: (_c: number, u: string) => { url = u; }, cookie: (n: string, v: string, o: Record<string, unknown>) => { cookieName = n; cookieVal = v; cookieOpts = o; } } as never;
   await p.authorize(client, { codeChallenge: "c", redirectUri: "https://claude.ai/api/mcp/auth_callback" }, res);
   const reqId = new URL(url, "http://x").searchParams.get("req")!;
-  assert.equal(cookieName, oauth.BIND_COOKIE);
+  assert.equal(cookieName, oauth.bindCookieName(reqId));
+  assert.notEqual(oauth.bindCookieName("aaaaaaaaaaaaaaaaaaaa"), oauth.bindCookieName("bbbbbbbbbbbbbbbbbbbb")); // two flows, two cookies
   assert.ok(cookieVal.length >= 40);
   assert.equal(cookieOpts.httpOnly, true);
   assert.equal(cookieOpts.sameSite, "lax");
@@ -160,8 +161,8 @@ test("oauth: a pending request is bound to the browser that started it", async (
   assert.equal(p.bindMatches(reqId, "forged"), false);
   assert.equal(p.bindMatches(reqId, undefined), false);
   assert.equal(p.bindMatches("someone-elses-request-id", cookieVal), false);
-  assert.equal(oauth.cookieValue(`a=1; ${oauth.BIND_COOKIE}=${cookieVal}; b=2`, oauth.BIND_COOKIE), cookieVal);
-  assert.equal(oauth.cookieValue(undefined, oauth.BIND_COOKIE), undefined);
+  assert.equal(oauth.cookieValue(`a=1; ${cookieName}=${cookieVal}; b=2`, cookieName), cookieVal);
+  assert.equal(oauth.cookieValue(undefined, cookieName), undefined);
   db.close();
 });
 
