@@ -85,11 +85,22 @@ app.use(
 app.use(loginRouter(provider));
 
 // Bearer auth runs before the JSON body is parsed, so anonymous requests cost nothing but a header read.
+// Advertise both scopes in the 401 challenge: clients such as claude.ai request exactly what the challenge
+// names, and the link tools need finance:link. A client may still deliberately ask for less.
 const auth = requireBearerAuth({ verifier: provider, requiredScopes: ["finance:read"], resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpUrl) });
 
 // Stateless Streamable HTTP: one short-lived server+transport per request. No
 // session bookkeeping to lose on a restart, and no SSE streams to hold open.
-app.all("/mcp", auth, express.json({ limit: "4mb" }), async (req, res) => {
+const advertiseScopes = (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const orig = res.setHeader.bind(res);
+  res.setHeader = ((name: string, value: unknown) => {
+    if (name.toLowerCase() === "www-authenticate" && typeof value === "string") value = value.replace(/scope="[^"]*"/, `scope="${SCOPES.join(" ")}"`);
+    return orig(name, value as string);
+  }) as typeof res.setHeader;
+  next();
+};
+
+app.all("/mcp", advertiseScopes, auth, express.json({ limit: "4mb" }), async (req, res) => {
   const server = buildServer(db, { hosted: true, scopes: req.auth?.scopes ?? [] });
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on("close", () => {
