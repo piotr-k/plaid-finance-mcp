@@ -323,7 +323,7 @@ export function loginRouter(provider: SqliteOAuthProvider): Router {
     <form method="post" action="/login"><input type="hidden" name="req" value="${esc(reqId)}">
     <input type="password" name="passphrase" placeholder="Passphrase" autofocus autocomplete="current-password" required>
     <button type="submit">Allow ${esc(info.client_name)}</button></form>`);
-  const expired = () => PAGE(`<p class="err">This sign-in link is missing or has expired. Start again from Claude.</p>`);
+  const expired = () => PAGE(`<p class="err">This sign-in was already completed, or it expired (links last 15 minutes).</p><p>Go back to Claude: if it shows the connection, you are done. If not, start the connection again from Claude; do not reuse this page.</p>`);
   const wrongBrowser = () => PAGE(`<p class="err">This sign-in must be finished in the browser where it was started. If you were sent this link, do not enter your passphrase. Start again from Claude.</p>`);
   const bound = (req: Request, id: string) => provider.bindMatches(id, cookieValue(req.headers.cookie, bindCookieName(id)));
   r.get("/login", (req: Request, res: Response) => {
