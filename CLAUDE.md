@@ -1,6 +1,7 @@
 # plaid-finance-mcp — project notes
 
-Read-only Plaid MCP server. README.md is the user guide. PLAID_PLAN.md is the Plaid build-kit state and
+Read-only Plaid MCP server. README.md is the front page (two-mode overview, quick start); docs/hosted.md,
+docs/reference.md, SECURITY.md and docs/disclaimer.md hold the rest. Keep the README short; put detail in docs/. PLAID_PLAN.md is the Plaid build-kit state and
 is git-ignored (it is a personal build log); it lives on the maintainer's machine. Machine- and
 deployment-specific notes belong in `CLAUDE.local.md` (also git-ignored), not here.
 
