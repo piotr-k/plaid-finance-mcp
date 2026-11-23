@@ -28,7 +28,7 @@ are not at your computer. Start with local mode working ([docs/local.md](local.m
 ## Deploy with the wizard
 
 ```bash
-brew install flyctl && fly auth login            # or https://fly.io/docs/flyctl/install/
+fly auth login                                   # Fly CLI install: https://fly.io/docs/flyctl/install/
 npm run setup:hosted
 ```
 

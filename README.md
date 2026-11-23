@@ -20,9 +20,9 @@ Start with local. Add hosted when you want your data away from the computer.
 ## Before you start
 
 - [ ] Comfortable in a terminal. This is a Node project, not an app.
-- [ ] **Node 22+** and a C++ toolchain (`xcode-select --install` on macOS).
+- [ ] **Node 22 or newer**: the installer at [nodejs.org](https://nodejs.org). On macOS also run `xcode-select --install` once (the native SQLite module needs a compiler). `npm run setup` checks both and tells you what is missing.
 - [ ] A free [Plaid developer account](https://dashboard.plaid.com). Sandbox works instantly with fake banks; real banks need Production access, a short form that is often approved on the spot.
-- [ ] For hosted mode: a free [Fly.io](https://fly.io) account and a claude.ai plan with custom connectors (Pro and up).
+- [ ] For hosted mode: a free [Fly.io](https://fly.io) account, the [Fly CLI](https://fly.io/docs/flyctl/install/), and a claude.ai plan with custom connectors (Pro and up).
 
 Not you? Claude's built-in [Personal Finance](https://support.claude.com/en/articles/18185620-use-personal-finance-in-claude) needs none of this. See [why both exist](#why-not-just-personal-finance).
 
@@ -42,7 +42,7 @@ Real banks, the by-hand path and details: **[docs/local.md](docs/local.md)**
 ## Hosted mode
 
 ```bash
-brew install flyctl && fly auth login       # https://fly.io/docs/flyctl/install/
+fly auth login                               # Fly CLI: https://fly.io/docs/flyctl/install/
 npm run setup:hosted
 ```
 

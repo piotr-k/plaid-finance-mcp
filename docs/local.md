@@ -6,8 +6,9 @@ on Linux (`TOKEN_STORE=db` plus `TOKEN_ENCRYPTION_KEY` in `.env`).
 
 ## Prerequisites
 
-- **Node 22 or newer** and a C++ toolchain (Xcode Command Line Tools on macOS, `build-essential` on
-  Debian/Ubuntu). `better-sqlite3` compiles a native module on install.
+- **Node 22 or newer**, from the installer at <https://nodejs.org> or any version manager. A C++ toolchain:
+  `xcode-select --install` on macOS, `sudo apt-get install build-essential python3` on Debian/Ubuntu.
+  `better-sqlite3` compiles a native module on install; `npm run setup` checks this and names the fix.
 - **A Plaid developer account** at <https://dashboard.plaid.com>. Sandbox is free and works immediately
   with fake banks. Real banks need **Production** access, which Plaid grants per developer after a short
   form in the dashboard; personal use is allowed, and approval is often immediate (this project's author
