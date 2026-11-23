@@ -4,11 +4,14 @@ A small, read-only [MCP](https://modelcontextprotocol.io) server that gives Clau
 loan data through [Plaid](https://plaid.com). It keeps balances, transactions and liabilities in a
 SQLite file you own and exports a clean CSV for budget reconciliation.
 
-Run it two ways:
+Run it one of two ways. The difference is where the database lives and where you are when you use it.
 
-- **Local** on your Mac over stdio, for Claude Code. Tokens live in the macOS Keychain.
-- **Hosted** on a tiny Fly.io machine with OAuth, so Claude on your phone, claude.ai and scheduled
-  routines can use it, and Plaid webhooks keep the data fresh while your laptop is closed.
+- **Local.** The database is a file on your computer and the server runs only while Claude Code is
+  using it, on that computer. Tokens live in the macOS Keychain (or encrypted in the database on Linux).
+  Nothing listens on the network. Use this if the laptop is where you do your finances.
+- **Hosted.** The database lives on a small Fly.io machine you own, behind a passphrase. Its purpose is
+  to let you reach your data away from the computer: from Claude on your phone, from claude.ai, from a
+  scheduled routine, and from Claude Code too. Plaid webhooks keep it fresh while your laptop is closed.
 
 Read-only by construction: Link, `/accounts/get`, `/accounts/balance/get`, `/transactions/sync`,
 `/liabilities/get`, `/institutions/get_by_id`. No auth, payments or transfer products are requested.
@@ -124,7 +127,8 @@ Columns: `date,account,description,amount,pending`
 
 ## Hosted mode (Fly.io)
 
-The same code runs as an always-on HTTPS service. What changes:
+The same code runs as an always-on HTTPS service on a machine you own, so the data is reachable when you
+are not at your computer. What changes from local mode:
 
 - `dist/http-server.js` serves MCP over Streamable HTTP at `/mcp`, protected by OAuth 2.1. It is a
   single-user server: clients register dynamically and the login page asks for your `MCP_PASSPHRASE`.
