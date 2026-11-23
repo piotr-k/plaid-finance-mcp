@@ -1,7 +1,7 @@
 # Hosted mode (Fly.io)
 
 The same code runs as an always-on HTTPS service on a machine you own, so the data is reachable when you
-are not at your computer. Start with local mode working ([README](../README.md)), then come here.
+are not at your computer. Start with local mode working ([docs/local.md](local.md)), then come here.
 
 ## What changes from local mode
 
