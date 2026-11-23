@@ -20,8 +20,8 @@ Read-only by construction: Link, `/accounts/get`, `/accounts/balance/get`, `/tra
 
 You need to be comfortable in a terminal: installing Node, running npm, editing a `.env` file. You also
 need a [Plaid developer account](https://dashboard.plaid.com). Sandbox works immediately with fake banks;
-connecting real banks requires Plaid's production approval, which is an application and usually a few
-days. If that is not you, Claude's built-in Personal Finance (below) gives you the conversation part with
+connecting real banks requires Plaid's production access, a short form in the dashboard that is often
+approved on the spot. If that is not you, Claude's built-in Personal Finance (below) gives you the conversation part with
 no setup at all. If it is, `npm run setup` walks you through the rest in about ten minutes.
 
 ### Why not Anthropic's Personal Finance?
@@ -40,8 +40,9 @@ the plumbing, or either one alone.
   Debian/Ubuntu). `better-sqlite3` compiles a native module on install.
 - **A Plaid developer account** at <https://dashboard.plaid.com>. Sandbox is free and works immediately
   with fake banks. Real banks need **Production** access, which Plaid grants per developer after a short
-  application; personal use is allowed. Budget a few days for approval, and expect a separate registration
-  step for some OAuth banks. Plaid bills per linked bank per month once you are in production; a
+  form in the dashboard; personal use is allowed, and approval is often immediate (this project's author
+  had it within minutes), though some accounts get a manual review. Expect a separate registration step
+  for some OAuth banks. Plaid bills per linked bank per month once you are in production; a
   household is a few dollars.
 - **Claude Code** for local mode. For hosted mode, a claude.ai plan that allows custom connectors, and a
   free [Fly.io](https://fly.io) account. The default machine size fits inside Fly's free monthly allowance.
