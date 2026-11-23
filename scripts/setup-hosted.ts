@@ -68,16 +68,22 @@ async function main() {
     say(`\n  No ${plaidEnv} Plaid keys in .env yet; let's add them. (Running the local wizard first is not required.)`);
     env = await collectPlaidKeys(plaidEnv);
   }
-  const secret = secretOf(env);
-  if (!env.PLAID_CLIENT_ID || !secret) fail(`PLAID_CLIENT_ID and a ${plaidEnv} secret are required.`);
   // One cheap read-only call proves the keys work for this environment before anything is created.
-  try {
-    const client = new PlaidClient({ environment: plaidEnv === "production" ? PlaidEnvironment.Production : PlaidEnvironment.Sandbox, clientId: env.PLAID_CLIENT_ID, secret });
-    await client.institutions.getById({ institution_id: "ins_109508", country_codes: ["US"] });
-    ok(`Plaid keys verified for ${plaidEnv}`);
-  } catch (e) {
-    const code = (e as { body?: { error_code?: string } })?.body?.error_code;
-    fail(`Plaid rejected the keys for ${plaidEnv}${code ? ` (${code})` : ""}. Check them at https://dashboard.plaid.com/developers/keys and rerun; choose to replace the stored value.`);
+  let secret = "";
+  for (let attempt = 1; ; attempt++) {
+    secret = secretOf(env) ?? "";
+    if (!env.PLAID_CLIENT_ID || !secret) fail(`PLAID_CLIENT_ID and a ${plaidEnv} secret are required.`);
+    try {
+      const client = new PlaidClient({ environment: plaidEnv === "production" ? PlaidEnvironment.Production : PlaidEnvironment.Sandbox, clientId: env.PLAID_CLIENT_ID, secret });
+      await client.institutions.getById({ institution_id: "ins_109508", country_codes: ["US"] });
+      ok(`Plaid keys verified for ${plaidEnv}`);
+      break;
+    } catch (e) {
+      const code = (e as { body?: { error_code?: string } })?.body?.error_code;
+      warn(`Plaid rejected the keys for ${plaidEnv}${code ? ` (${code})` : ""}. They are at https://dashboard.plaid.com/developers/keys.`);
+      if (attempt >= 3 || (await ask("  Enter them again? [Y/n] ")).toLowerCase() === "n") fail("could not verify the Plaid keys.");
+      env = await collectPlaidKeys(plaidEnv);
+    }
   }
 
   // 2. Names

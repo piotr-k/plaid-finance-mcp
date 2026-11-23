@@ -157,6 +157,23 @@ export async function collectPlaidKeys(need: "sandbox" | "production"): Promise<
   return parseEnv(fs.readFileSync(ENV_PATH, "utf8"));
 }
 
+/** "plaid-finance" unless Claude Code already has that name pointing at a different checkout. */
+export function freeServerName(serverJs: string): string {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(process.env.HOME ?? "", ".claude.json"), "utf8")) as { mcpServers?: Record<string, { args?: string[] }> };
+    const servers = cfg.mcpServers ?? {};
+    const pointsHere = (n: string) => (servers[n]?.args ?? []).includes(serverJs);
+    if (!servers["plaid-finance"] || pointsHere("plaid-finance")) return "plaid-finance";
+    for (let i = 2; i < 20; i++) {
+      const n = `plaid-finance-${i}`;
+      if (!servers[n] || pointsHere(n)) return n;
+    }
+  } catch {
+    /* no config yet: default name is free */
+  }
+  return "plaid-finance";
+}
+
 async function main() {
   say("\nplaid-finance-mcp setup\n");
 
@@ -193,10 +210,11 @@ async function main() {
   // 4. What to do next
   const nodeBin = process.execPath;
   const serverJs = path.join(ROOT, "dist", "server.js");
+  const name = freeServerName(serverJs);
   say(`
   All good. Register the server with Claude Code by running:
 
-    claude mcp add --scope user --transport stdio plaid-finance -- "${nodeBin}" "${serverJs}"
+    claude mcp add --scope user --transport stdio ${name} -- "${nodeBin}" "${serverJs}"${name === "plaid-finance" ? "" : "\n\n  (named " + name + " because plaid-finance is already registered for another folder)"}
 
   Then open Claude Code and ask: "list my accounts". You are in sandbox mode with fake banks.
 
