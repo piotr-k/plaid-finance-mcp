@@ -142,6 +142,17 @@ The same code runs as an always-on HTTPS service. What changes:
 
 ```bash
 brew install flyctl && fly auth login            # or https://fly.io/docs/flyctl/install/
+npm run setup:hosted
+```
+
+The hosted wizard asks for an app name, region and display name, writes `fly.toml`, creates the app and
+its volume, generates the token encryption key, asks for your passphrase with hidden input, sets every
+secret without going through a shell, deploys, waits for the health check and prints the URLs to paste
+into claude.ai and Claude Code. Rerun it to redeploy; it reuses what exists.
+
+By hand, the same steps are:
+
+```bash
 cp fly.example.toml fly.toml                     # replace <app> in both places
 fly apps create <app>
 fly volumes create plaid_data --region <region> --size 1 -a <app>

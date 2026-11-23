@@ -42,6 +42,9 @@ deployment-specific notes belong in `CLAUDE.local.md` (also git-ignored), not he
 - No redirect URI: production rejects http://localhost redirect URIs (HTTPS only), so Hosted Link is the
   only laptop-friendly way to link OAuth banks. Do not reintroduce a local Link page without HTTPS.
 
+- `scripts/setup-hosted.ts` (`npm run setup:hosted`) drives the Fly deploy: CLI/login checks, fly.toml from the
+  template (`renderFlyToml`, tested), app + volume (idempotent), key generation into .env, hidden passphrase (12+),
+  `fly secrets set --stage` with one argv element per secret (no shell), deploy, /health poll, connect URLs.
 - `scripts/setup.ts` is the first-run wizard (`npm run setup`): toolchain checks, hidden-input Plaid keys into
   `.env` (0600), build, sandbox smoke, prints the `claude mcp add` line. Pure helpers `mergeEnv`/`parseEnv` are tested.
 

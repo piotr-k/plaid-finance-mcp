@@ -1,5 +1,5 @@
 # Fly.io config for the hosted Plaid MCP server.
-# Copy to fly.toml (git-ignored) and replace <app> in both places below.
+# Copy to fly.toml (git-ignored) and replace <app> in both places below, or let `npm run setup:hosted` do it.
 # Secrets are set with `fly secrets set`, never here: PLAID_CLIENT_ID, PLAID_SECRET_PRODUCTION,
 # TOKEN_ENCRYPTION_KEY, MCP_PASSPHRASE.
 app = "<app>"

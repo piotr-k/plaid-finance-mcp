@@ -19,10 +19,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ENV_PATH = path.join(ROOT, ".env");
 const EXAMPLE_PATH = path.join(ROOT, ".env.example");
 
-const say = (s = "") => console.log(s);
-const ok = (s: string) => say(`  ✔ ${s}`);
-const warn = (s: string) => say(`  ! ${s}`);
-const fail = (s: string): never => {
+export const say = (s = "") => console.log(s);
+export const ok = (s: string) => say(`  ✔ ${s}`);
+export const warn = (s: string) => say(`  ! ${s}`);
+export const fail = (s: string): never => {
   say(`\n  ✖ ${s}\n`);
   process.exit(1);
 };
@@ -54,7 +54,7 @@ export function parseEnv(text: string): Record<string, string> {
   return vars;
 }
 
-function ask(question: string, { hidden = false } = {}): Promise<string> {
+export function ask(question: string, { hidden = false } = {}): Promise<string> {
   if (hidden) return askHidden(question);
   return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
@@ -69,7 +69,7 @@ function ask(question: string, { hidden = false } = {}): Promise<string> {
  * Read a line without echoing it. Readline cannot do this cleanly (it redraws the prompt through
  * the muted stream), so this reads raw keystrokes: Enter finishes, Backspace edits, Ctrl-C aborts.
  */
-function askHidden(question: string): Promise<string> {
+export function askHidden(question: string): Promise<string> {
   return new Promise((resolve) => {
     process.stdout.write(question);
     const stdin = process.stdin;
@@ -100,7 +100,7 @@ function askHidden(question: string): Promise<string> {
   });
 }
 
-function run(label: string, cmd: string, args: string[], env: NodeJS.ProcessEnv = {}): boolean {
+export function run(label: string, cmd: string, args: string[], env: NodeJS.ProcessEnv = {}): boolean {
   say(`\n  → ${label}`);
   const r = spawnSync(cmd, args, { cwd: ROOT, stdio: "inherit", env: { ...process.env, ...env } });
   return r.status === 0;
