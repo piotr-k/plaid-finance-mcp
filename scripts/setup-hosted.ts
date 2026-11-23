@@ -12,7 +12,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { ask, askHidden, fail, mergeEnv, ok, parseEnv, run, say, warn } from "./setup.js";
@@ -123,6 +123,25 @@ async function main() {
 
   // 4. Secrets
   let key = env.TOKEN_ENCRYPTION_KEY;
+  if (appExisted) {
+    // An existing app already holds encrypted Plaid tokens. Setting a different key would make
+    // every linked bank unreadable, so compare hashes (never values) before touching it.
+    const remote = fly(["ssh", "console", "-a", app, "-C", "node -e \"console.log(require('crypto').createHash('sha256').update(process.env.TOKEN_ENCRYPTION_KEY||'').digest('hex'))\""], { quiet: true });
+    const remoteHash = remote.ok ? remote.out.trim().split("\n").pop()?.trim() ?? "" : "";
+    const localHash = createHash("sha256").update(key ?? "").digest("hex");
+    const emptyHash = createHash("sha256").update("").digest("hex");
+    if (remote.ok && remoteHash !== emptyHash && remoteHash !== localHash) {
+      fail(
+        `the app already has a TOKEN_ENCRYPTION_KEY that differs from ${key ? "the one in .env" : "your .env (which has none)"}.\n` +
+          "    Replacing it would make the banks already linked on the server unreadable. Either:\n" +
+          `    - copy the server's key into .env first:  fly ssh console -a ${app} -C 'printenv TOKEN_ENCRYPTION_KEY'\n` +
+          "      (it prints once; paste it as TOKEN_ENCRYPTION_KEY=... in .env, then rerun), or\n" +
+          `    - accept relinking every bank: unlink them first with the unlink tool or \`node dist/cli.js unlink\`.`,
+      );
+    }
+    if (remote.ok && remoteHash === localHash && key) ok("TOKEN_ENCRYPTION_KEY matches the one on the server");
+    if (!remote.ok) warn("could not compare the encryption key with the server (fly ssh failed); continuing with the local one");
+  }
   if (!key) {
     key = randomBytes(32).toString("base64");
     fs.writeFileSync(ENV_PATH, mergeEnv(fs.readFileSync(ENV_PATH, "utf8"), { TOKEN_ENCRYPTION_KEY: key }), { mode: 0o600 });
