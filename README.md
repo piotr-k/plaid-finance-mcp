@@ -82,6 +82,10 @@ that is yours. Use Personal Finance for conversation and this for the plumbing, 
 - Not financial advice. Numbers can be wrong. Your data goes bank → Plaid → a machine you control, nowhere
   else. No warranty. Full text: **[docs/disclaimer.md](docs/disclaimer.md)**
 
+## Need help?
+
+Open an issue, or reach out: [hello@piotr-kuczynski.com](mailto:hello@piotr-kuczynski.com).
+
 ## License
 
 MIT. Contributions welcome; keep the read-only product list and the no-tokens-in-logs rule.

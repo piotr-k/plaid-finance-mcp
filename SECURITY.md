@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Open a private security advisory on this repository's Security tab (GitHub → Security → Advisories →
-Report a vulnerability). Please do not file a public issue for anything exploitable. This is a one-person
+Report a vulnerability). Please do not file a public issue for anything exploitable. Email works too: hello@piotr-kuczynski.com. This is a one-person
 project; expect an acknowledgement within a week.
 
 ## Security model
