@@ -13,7 +13,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { PlaidClient, PlaidEnvironment } from "plaid";
@@ -26,6 +26,11 @@ const FLY_TEMPLATE = path.join(ROOT, "fly.example.toml");
 const APP_NAME_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 const REGION_RE = /^[a-z]{3}$/;
 const MIN_PASSPHRASE = 12;
+const WORDS = ["able","acid","aged","also","area","army","away","baby","back","ball","band","bank","base","bath","bear","beat","been","beer","bell","belt","bend","bent","best","bird","blow","blue","boat","body","bolt","bone","book","boot","born","boss","both","bowl","bulk","burn","bush","busy","cake","calm","came","camp","card","care","cart","case","cash","cast","cave","cell","chat","chef","chip","city","clay","clip","club","coal","coat","code","coin","cold","come","cook","cool","copy","core","corn","cost","crew","crop","cure","dark","data","date","dawn","days","dead","deal","dear","debt","deck","deep","deer","desk","dial","diet","dirt","dish","disk","dock","does","dome","done","door","dose","dove","down","draw","drop","drum","dual","duck","dust","duty","each","earn","ease","east","easy","edge","else","even","ever","exit","face","fact","fade","fail","fair","fall","fame","farm","fast","fate","fear","feed","feel","fell","file","fill","film","find","fine","fire","firm","fish","five","flag","flat","flow","fold","folk","food","foot","ford","form","fort","four","free","from","fuel","full","fund","gain","game","gate","gave","gear","gift","girl","give","glad","glow","goal","goat","gold","golf","gone","good","gray","grew","grid","grip","grow","gulf","hair","half","hall","hand","hang","hard","harm","hawk","head","hear","heat","held","help","herb","hero","hide","high","hill","hint","hire","hold","hole","holy","home","hope","horn","host","hour","huge","hunt","idea","inch","iron","item","jade","jazz","join","joke","jump","jury","just","keen","keep","kept","kick","kind","king","kite","knee","knew","knot","lack","lake","lamp","land","lane","last","late","lawn","lead","leaf","lean","left","lend","lens","less","life","lift","lime","line","link","lion","list","live","load","loan","lock","loft"];
+/** Five random words from a 256-word list: 40 bits of entropy, easy to type on a phone. */
+export function generatePassphrase(count = 5): string {
+  return Array.from({ length: count }, () => WORDS[randomInt(WORDS.length)]).join("-");
+}
 
 /** Fill the template with the chosen values. Pure, for tests. */
 export function renderFlyToml(template: string, v: { app: string; region: string; appName: string; plaidEnv: "production" | "sandbox" }): string {
@@ -182,12 +187,26 @@ async function main() {
   } else {
     ok("using TOKEN_ENCRYPTION_KEY from .env");
   }
-  say(`\n  Choose the passphrase you will type when Claude asks to connect. It is the only credential`);
-  say(`  protecting your bank data, so make it long (${MIN_PASSPHRASE}+ characters, 16+ recommended). Typing is hidden.\n`);
+  say(`\n  Now a passphrase. You will type it on the sign-in page whenever Claude connects (including on`);
+  say(`  your phone), and it is the only thing protecting your bank data. Two ways to get one:`);
+  say(`    - press Enter and the wizard generates five random words for you, or`);
+  say(`    - type your own, ${MIN_PASSPHRASE}+ characters (16+ recommended), from a password manager.`);
+  say(`  Either way, save it in your password manager before continuing.\n`);
   if (appExisted) warn("this app already exists: the passphrase you enter now replaces the old one at the next deploy.");
   let passphrase = "";
   for (;;) {
-    passphrase = await askHidden("  Passphrase (typing is hidden): ");
+    passphrase = await askHidden("  Passphrase (hidden; Enter to generate one): ");
+    if (passphrase === "") {
+      passphrase = generatePassphrase();
+      say(`\n  Your passphrase is:   ${passphrase}\n`);
+      say("  Save it now. It will not be shown again, and it cannot be recovered, only replaced by rerunning this wizard.");
+      const saved = (await ask("  Type saved when it is in your password manager: ")).toLowerCase();
+      if (saved !== "saved") {
+        warn("not confirmed; generating a new one.");
+        continue;
+      }
+      break;
+    }
     if (passphrase.length < MIN_PASSPHRASE) {
       warn(`at least ${MIN_PASSPHRASE} characters.`);
       continue;

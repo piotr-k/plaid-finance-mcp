@@ -316,7 +316,7 @@ export function loginRouter(provider: SqliteOAuthProvider): Router {
   };
   const form = (reqId: string, info: PendingInfo, err = "") =>
     PAGE(`<h2>${esc(APP_NAME)}</h2>
-    <div class="who"><b>${esc(info.client_name)}</b>wants access to your bank data (${esc(info.scopes.join(", "))}).<br>After you allow it, the sign-in code is sent to <b>${esc(info.redirect_to)}</b>.</div>
+    <div class="who"><b>${esc(info.client_name)}</b>wants access to your bank data (${esc(info.scopes.join(", "))}).<br>After you allow it, the sign-in code goes to:<br><b>${esc(info.redirect_to)}</b></div>
     <p>If you did not just start this from Claude, close this page.</p>
     ${err ? `<p class="err">${esc(err)}</p>` : ""}
     <form method="post" action="/login"><input type="hidden" name="req" value="${esc(reqId)}">

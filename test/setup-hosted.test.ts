@@ -20,3 +20,12 @@ test("appFromFlyToml reads the name back and rejects the unfilled template", () 
   assert.equal(appFromFlyToml(renderFlyToml(template, { app: "abc-1", region: "lhr", appName: "x", plaidEnv: "production" })), "abc-1");
   assert.equal(appFromFlyToml(template), null);
 });
+
+test("generatePassphrase yields five lowercase words joined by hyphens, different each time", async () => {
+  const { generatePassphrase } = await import("../scripts/setup-hosted.js");
+  const a = generatePassphrase();
+  const b = generatePassphrase();
+  assert.match(a, /^[a-z]{3,5}(-[a-z]{3,5}){4}$/);
+  assert.notEqual(a, b);
+  assert.ok(a.length >= 12);
+});
