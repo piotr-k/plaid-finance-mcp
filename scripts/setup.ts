@@ -122,8 +122,9 @@ export async function collectPlaidKeys(need: "sandbox" | "production"): Promise<
   const current = parseEnv(fs.readFileSync(ENV_PATH, "utf8"));
   const updates: Record<string, string> = {};
 
-  say("\n  Plaid keys live at https://dashboard.plaid.com/developers/keys");
-  say("  Paste them here; secrets are hidden as you type and only written to .env (which git ignores).\n");
+  say("\n  Your Plaid keys are at https://dashboard.plaid.com/developers/keys");
+  say("  (client_id, then the secret for each environment). Paste each one here and press Enter.");
+  say("  Secrets are hidden as you type. They are saved only to .env in this folder, which git ignores.\n");
 
   const want = async (key: string, prompt: string, { hidden, optional = false, check, alias }: { hidden: boolean; optional?: boolean; check?: (v: string) => string | null; alias?: string }) => {
     const existing = current[key] ? key : alias && current[alias] ? alias : null;
@@ -145,9 +146,9 @@ export async function collectPlaidKeys(need: "sandbox" | "production"): Promise<
     }
   };
   const secretCheck = (v: string) => (/^[a-f0-9]{30}$/i.test(v) ? null : "That does not look like a Plaid secret (30 hex characters). Try again.");
-  await want("PLAID_CLIENT_ID", "client_id", { hidden: false, check: (v) => (/^[a-f0-9]{24}$/i.test(v) ? null : "That does not look like a Plaid client_id (24 hex characters). Try again.") });
-  await want("PLAID_SECRET_SANDBOX", "sandbox secret", { hidden: true, optional: need !== "sandbox", check: secretCheck });
-  await want("PLAID_SECRET_PRODUCTION", "production secret" + (need === "production" ? "" : ", if you have production access"), { hidden: true, optional: need !== "production", alias: "PLAID_SECRET", check: secretCheck });
+  await want("PLAID_CLIENT_ID", "Plaid client_id", { hidden: false, check: (v) => (/^[a-f0-9]{24}$/i.test(v) ? null : "That does not look like a Plaid client_id (24 hex characters). Try again.") });
+  await want("PLAID_SECRET_SANDBOX", "Plaid sandbox secret", { hidden: true, optional: need !== "sandbox", check: secretCheck });
+  await want("PLAID_SECRET_PRODUCTION", "Plaid production secret" + (need === "production" ? "" : ", if you have production access"), { hidden: true, optional: need !== "production", alias: "PLAID_SECRET", check: secretCheck });
   if (!current.PLAID_ENV) updates.PLAID_ENV = "sandbox";
 
   if (Object.keys(updates).length) {

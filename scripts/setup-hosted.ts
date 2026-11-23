@@ -58,9 +58,19 @@ async function main() {
   ok("Fly CLI installed");
   if (!fly(["auth", "whoami"], { quiet: true }).ok) fail("Not signed in to Fly. Run `fly auth login` and try again.");
   ok("signed in to Fly");
-  const plaidEnvAnswer = (await ask("  Plaid environment for the server [production/sandbox] (production): ")).toLowerCase() || "production";
-  if (plaidEnvAnswer !== "production" && plaidEnvAnswer !== "sandbox") fail("Answer production or sandbox.");
-  const plaidEnv = plaidEnvAnswer as "production" | "sandbox";
+  say("\n  Which Plaid environment should this server use?");
+  say("    production  real banks, real money. Needs Plaid production access and a production secret.");
+  say("    sandbox     Plaid's fake banks (sign in with user_good / pass_good). Free; good for a first try.\n");
+  let plaidEnv: "production" | "sandbox" = "production";
+  for (;;) {
+    const a = (await ask("  Type production or sandbox [production]: ")).toLowerCase();
+    if (a === "" || a === "production" || a === "p") break;
+    if (a === "sandbox" || a === "s") {
+      plaidEnv = "sandbox";
+      break;
+    }
+    warn("Please type production or sandbox.");
+  }
 
   let env = fs.existsSync(ENV_PATH) ? parseEnv(fs.readFileSync(ENV_PATH, "utf8")) : {};
   const secretOf = (e: Record<string, string>) => (plaidEnv === "production" ? e.PLAID_SECRET_PRODUCTION || e.PLAID_SECRET : e.PLAID_SECRET_SANDBOX || e.PLAID_SECRET);
@@ -81,7 +91,7 @@ async function main() {
     } catch (e) {
       const code = (e as { body?: { error_code?: string } })?.body?.error_code;
       warn(`Plaid rejected the keys for ${plaidEnv}${code ? ` (${code})` : ""}. They are at https://dashboard.plaid.com/developers/keys.`);
-      if (attempt >= 3 || (await ask("  Enter them again? [Y/n] ")).toLowerCase() === "n") fail("could not verify the Plaid keys.");
+      if (attempt >= 3 || (await ask("  Enter the keys again? [Y/n] ")).toLowerCase() === "n") fail("could not verify the Plaid keys.");
       env = await collectPlaidKeys(plaidEnv);
     }
   }
@@ -98,25 +108,29 @@ async function main() {
     }
   }
   if (!app) {
-    say("\n  Pick a name for the Fly app. It becomes the public hostname <name>.fly.dev, so avoid anything");
-    say("  personal (no surname, no street). Lowercase letters, digits and hyphens.\n");
+    say("\n  Pick a name for the Fly app. It becomes the public address https://<name>.fly.dev, so avoid");
+    say("  anything personal (no surname, no street). Lowercase letters, digits and hyphens, e.g. my-ledger.\n");
     for (;;) {
-      app = await ask("  app name: ");
+      app = await ask("  App name: ");
       if (APP_NAME_RE.test(app)) break;
       warn("3-30 characters, lowercase letters, digits and hyphens, starting and ending with a letter or digit.");
     }
     for (;;) {
-      region = (await ask("  region code (e.g. ord Chicago, lax Los Angeles, lhr London, fra Frankfurt; `fly platform regions` lists all): ")).toLowerCase();
+      say("\n  Where should the machine run? Pick the Fly region nearest you (three letters):");
+      say("    ord Chicago   iad Virginia   lax Los Angeles   sea Seattle   yyz Toronto");
+      say("    lhr London    fra Frankfurt ams Amsterdam    syd Sydney     Full list: fly platform regions\n");
+      region = (await ask("  Region: ")).toLowerCase();
       if (REGION_RE.test(region)) break;
       warn("Region codes are three lowercase letters.");
     }
-    const appName = (await ask('  display name shown on the sign-in page and Plaid\'s Link screen (Finance MCP): ')) || "Finance MCP";
+    say("\n  A display name. It appears on the sign-in page and on Plaid's bank-linking screen. Anything you like.\n");
+    const appName = (await ask('  Display name [Finance MCP]: ')) || "Finance MCP";
     fs.writeFileSync(FLY_TOML, renderFlyToml(fs.readFileSync(FLY_TEMPLATE, "utf8"), { app, region, appName, plaidEnv }));
     ok("wrote fly.toml (git-ignored)");
   }
   if (!region) {
     for (;;) {
-      region = (await ask("  region code for the volume (e.g. ord, lax, lhr, fra): ")).toLowerCase();
+      region = (await ask("  Region for the storage volume (three letters, e.g. ord, lax, lhr): ")).toLowerCase();
       if (REGION_RE.test(region)) break;
     }
   }
@@ -173,12 +187,12 @@ async function main() {
   if (appExisted) warn("this app already exists: the passphrase you enter now replaces the old one at the next deploy.");
   let passphrase = "";
   for (;;) {
-    passphrase = await askHidden("  passphrase: ");
+    passphrase = await askHidden("  Passphrase (typing is hidden): ");
     if (passphrase.length < MIN_PASSPHRASE) {
       warn(`at least ${MIN_PASSPHRASE} characters.`);
       continue;
     }
-    const again = await askHidden("  again: ");
+    const again = await askHidden("  Type it again: ");
     if (again === passphrase) break;
     warn("they did not match; try again.");
   }
