@@ -290,6 +290,29 @@ export function clientIp(req: Request): string {
   return req.ip ?? "unknown";
 }
 
+/**
+ * CSP form-action also governs the redirect that follows a form submission, and our /login POST
+ * answers with a redirect to the client's callback. So the allowed redirect origins must be listed
+ * here, or browsers silently drop the code on its way back to Claude.
+ */
+export function formActionSources(): string {
+  const sources = new Set(["'self'"]);
+  for (const entry of ALLOWED_REDIRECTS) {
+    if (LOOPBACK.has(entry.toLowerCase())) {
+      const host = entry.toLowerCase();
+      sources.add(`http://${host}:*`);
+      sources.add(`https://${host}:*`);
+      continue;
+    }
+    try {
+      sources.add(new URL(entry).origin);
+    } catch {
+      /* ignored; registration rejects it anyway */
+    }
+  }
+  return [...sources].join(" ");
+}
+
 const REQ_ID = /^[A-Za-z0-9_-]{20,64}$/;
 const FAIL_DELAY_MS = 400;
 
@@ -310,7 +333,7 @@ export function loginRouter(provider: SqliteOAuthProvider): Router {
   r.use(express.urlencoded({ extended: false }));
   const headers = (res: Response) => {
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+    res.setHeader("Content-Security-Policy", `default-src 'none'; style-src 'unsafe-inline'; form-action ${formActionSources()}; frame-ancestors 'none'; base-uri 'none'`);
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Content-Type-Options", "nosniff");

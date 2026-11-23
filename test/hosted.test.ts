@@ -173,3 +173,13 @@ test("oauth: a client that requests no scopes is granted all of them; unknown sc
   assert.deepEqual(oauth.grantedScopes(["bogus"]), ["finance:read", "finance:link"]);
   assert.deepEqual(oauth.grantedScopes(["finance:link", "bogus"]), ["finance:link"]);
 });
+
+test("login page CSP form-action allows the callback origins, otherwise browsers block the post-login redirect", () => {
+  const fa = oauth.formActionSources();
+  assert.match(fa, /'self'/);
+  assert.match(fa, /https:\/\/claude\.ai/);
+  assert.match(fa, /https:\/\/claude\.com/);
+  assert.match(fa, /http:\/\/localhost:\*/);
+  assert.match(fa, /http:\/\/127\.0\.0\.1:\*/);
+  assert.doesNotMatch(fa, /auth_callback/); // origins only, no paths
+});
