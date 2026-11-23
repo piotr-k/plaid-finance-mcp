@@ -7,7 +7,7 @@ import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middlew
 import { APP_NAME, PLAID_ENV, PORT, PUBLIC_URL, WEBHOOK_URL, DATA_DIR, TOKEN_STORE, TRUST_PROXY, HOSTED_UNLINK, mcpPassphrase, tokenEncryptionKey, log } from "./config.js";
 import { openDb } from "./db.js";
 import { buildServer } from "./tools.js";
-import { SqliteOAuthProvider, loginRouter, SCOPES } from "./oauth.js";
+import { SqliteOAuthProvider, loginRouter, clientIp, SCOPES } from "./oauth.js";
 import { verifyPlaidWebhook, dispatchWebhook, enqueue, type PlaidWebhookBody } from "./webhooks.js";
 import { finalizePendingLinkSessions } from "./hosted-link.js";
 import { syncAll } from "./sync.js";
@@ -52,6 +52,25 @@ app.post("/plaid/webhook", express.raw({ type: "*/*", limit: "1mb" }), async (re
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true, environment: PLAID_ENV, items: db.items().length }));
+
+// Visibility into the OAuth endpoints the SDK handles for us: one line per response, with the
+// error code and description on failure. Never bodies, never tokens or secrets.
+app.use(["/token", "/register", "/authorize", "/revoke"], (req, res, next) => {
+  const started = Date.now();
+  const origJson = res.json.bind(res);
+  let errorText = "";
+  res.json = ((body: unknown) => {
+    const b = body as { error?: string; error_description?: string } | null;
+    if (res.statusCode >= 400 && b && typeof b === "object" && b.error) errorText = ` ${b.error}: ${String(b.error_description ?? "").replace(/\s+/g, " ").slice(0, 200)}`;
+    return origJson(body);
+  }) as typeof res.json;
+  res.on("finish", () => {
+    const where = req.baseUrl || req.path;
+    const grant = where === "/token" && req.body && typeof req.body === "object" ? ` grant=${String((req.body as { grant_type?: unknown }).grant_type ?? "?")}` : "";
+    if (res.statusCode >= 400 || where === "/token") log(`oauth: ${req.method} ${where} -> ${res.statusCode}${grant}${errorText} (${Date.now() - started}ms, from ${clientIp(req)})`);
+  });
+  next();
+});
 
 app.use(
   mcpAuthRouter({
