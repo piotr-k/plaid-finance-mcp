@@ -4,6 +4,20 @@ The database is a file on your computer and the server runs only while Claude Co
 computer. Nothing listens on the network. Tokens live in the macOS Keychain, or encrypted in the database
 on Linux (`TOKEN_STORE=db` plus `TOKEN_ENCRYPTION_KEY` in `.env`).
 
+## Prerequisites
+
+- **Node 22 or newer** and a C++ toolchain (Xcode Command Line Tools on macOS, `build-essential` on
+  Debian/Ubuntu). `better-sqlite3` compiles a native module on install.
+- **A Plaid developer account** at <https://dashboard.plaid.com>. Sandbox is free and works immediately
+  with fake banks. Real banks need **Production** access, which Plaid grants per developer after a short
+  form in the dashboard; personal use is allowed, and approval is often immediate (this project's author
+  had it within minutes), though some accounts get a manual review. Expect a separate registration step
+  for some OAuth banks. Plaid bills per linked bank per month once you are in production; a household is
+  a few dollars.
+- **Claude Code**, or another MCP client that can run a stdio server.
+- **macOS** for the Keychain. On Linux set `TOKEN_STORE=db` and `TOKEN_ENCRYPTION_KEY` in `.env` and
+  tokens are stored encrypted in SQLite instead.
+
 ## Quick start (sandbox)
 
 ```bash

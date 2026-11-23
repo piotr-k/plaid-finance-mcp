@@ -1,75 +1,30 @@
 # plaid-finance-mcp
 
-A small, read-only [MCP](https://modelcontextprotocol.io) server that gives Claude your bank, card and
-loan data through [Plaid](https://plaid.com). It keeps balances, transactions and liabilities in a
-SQLite file you own and exports a clean CSV for budget reconciliation.
+Give Claude read-only access to your bank, card and loan accounts, on your own terms.
 
-Read-only by construction: Link, `/accounts/get`, `/accounts/balance/get`, `/transactions/sync`,
-`/liabilities/get`, `/institutions/get_by_id`. No auth, payments or transfer products are requested.
+- Pulls balances, transactions and liabilities through [Plaid](https://plaid.com) into a SQLite file you own.
+- Exposes them to Claude as [MCP](https://modelcontextprotocol.io) tools, and exports a clean CSV.
+- Read-only by construction: no payments, transfers or auth products are ever requested.
 
-## Two ways to run it
-
-The difference is where the database lives and where you are when you use it.
+## Pick a mode
 
 | | **Local** | **Hosted** |
 |---|---|---|
-| Database | A file on your computer | A small [Fly.io](https://fly.io) machine you own |
-| Runs | Only while Claude Code uses it, on that computer | Always on, behind a passphrase |
-| Use it from | Claude Code on that computer | Claude on your phone, claude.ai, scheduled routines, and Claude Code |
-| Fresh data | When you run `sync` | Plaid webhooks push updates while your laptop is closed |
-| Tokens | macOS Keychain (encrypted in the database on Linux) | Encrypted in the database |
-| Network | Nothing listens | One HTTPS port, OAuth 2.1 |
+| Your data lives | in a file on your computer | on a small [Fly.io](https://fly.io) machine you own |
+| Use it from | Claude Code, on that computer | your phone, claude.ai, scheduled routines, Claude Code |
+| Stays fresh | when you run `sync` | automatically, via Plaid webhooks |
+| Setup time | 10 minutes | 15 more minutes |
 
-**Stand up local mode** (about ten minutes):
+Start with local. Add hosted when you want your data away from the computer.
 
-1. `git clone` this repo, `npm install`, `npm run setup`. The wizard asks for your Plaid keys, builds,
-   and proves everything against Plaid's sandbox banks.
-2. Run the `claude mcp add` command the wizard prints.
-3. Ask Claude Code to list your accounts.
+## Before you start
 
-**Stand up hosted mode** (local mode first, then about fifteen more minutes):
+- [ ] Comfortable in a terminal. This is a Node project, not an app.
+- [ ] **Node 22+** and a C++ toolchain (`xcode-select --install` on macOS).
+- [ ] A free [Plaid developer account](https://dashboard.plaid.com). Sandbox works instantly with fake banks; real banks need Production access, a short form that is often approved on the spot.
+- [ ] For hosted mode: a free [Fly.io](https://fly.io) account and a claude.ai plan with custom connectors (Pro and up).
 
-1. Install the Fly CLI and `fly auth login`.
-2. `npm run setup:hosted`. The wizard asks for an app name, region and passphrase, creates the app,
-   sets the secrets, deploys, and prints a URL.
-3. Add that URL as a custom connector in claude.ai, or with `claude mcp add` in Claude Code, and sign in
-   with the passphrase.
-
-Details for each: [docs/local.md](docs/local.md) and [docs/hosted.md](docs/hosted.md).
-
-## Who this is for
-
-You need to be comfortable in a terminal: installing Node, running npm, editing a `.env` file. You also
-need a [Plaid developer account](https://dashboard.plaid.com). Sandbox works immediately with fake banks;
-connecting real banks requires Plaid's production access, a short form in the dashboard that is often
-approved on the spot. If that is not you, Claude's built-in Personal Finance (below) gives you the
-conversation part with no setup at all. If it is, `npm run setup` walks you through the rest.
-
-### Why not Anthropic's Personal Finance?
-
-Claude's built-in [Personal Finance](https://support.claude.com/en/articles/18185620-use-personal-finance-in-claude)
-(US beta, Pro and above) also links banks through Plaid and is excellent for questions in chat. This project
-was built the same month without knowing it existed, and the two turn out to be complementary. As of
-November 2026, Personal Finance cannot export your data and cannot be used from Claude Code, scheduled
-tasks or Cowork. This project covers those: a CSV you can drop into a spreadsheet, tools callable from
-automations, and a database on disk that is yours. Use Personal Finance for conversation and this for
-the plumbing, or either one alone.
-
-## Prerequisites
-
-- **Node 22 or newer** and a C++ toolchain (Xcode Command Line Tools on macOS, `build-essential` on
-  Debian/Ubuntu). `better-sqlite3` compiles a native module on install.
-- **A Plaid developer account** at <https://dashboard.plaid.com>. Sandbox is free and works immediately
-  with fake banks. Real banks need **Production** access, which Plaid grants per developer after a short
-  form in the dashboard; personal use is allowed, and approval is often immediate (this project's author
-  had it within minutes), though some accounts get a manual review. Expect a separate registration step
-  for some OAuth banks. Plaid bills per linked bank per month once you are in production; a
-  household is a few dollars.
-- **Claude Code** for local mode. For hosted mode, a claude.ai plan that allows custom connectors (Pro,
-  Max, Team or Enterprise at the time of writing), and a free [Fly.io](https://fly.io) account. The default
-  machine size fits inside Fly's free monthly allowance.
-- Local mode assumes **macOS** for the Keychain. On Linux set `TOKEN_STORE=db` and `TOKEN_ENCRYPTION_KEY`
-  in `.env` and tokens are stored encrypted in SQLite instead.
+Not you? Claude's built-in [Personal Finance](https://support.claude.com/en/articles/18185620-use-personal-finance-in-claude) needs none of this. See [why both exist](#why-not-just-personal-finance).
 
 ## Local mode
 
@@ -79,61 +34,54 @@ npm install
 npm run setup
 ```
 
-The setup wizard checks your toolchain, asks for your Plaid keys with hidden input and writes them to
-`.env` (git-ignored), builds, proves everything against Plaid's sandbox banks, and prints the exact
-`claude mcp add` command for your machine. Run that command, open Claude Code, and ask it to list your
-accounts.
+The wizard asks for your Plaid keys, builds, proves everything against sandbox banks, and prints a
+`claude mcp add` command. Run it, open Claude Code, ask for your accounts.
 
-Linking real banks, the by-hand path, and the details are in **[docs/local.md](docs/local.md)**.
+Real banks, the by-hand path and details: **[docs/local.md](docs/local.md)**
 
-## Hosted mode (Fly.io)
+## Hosted mode
 
 ```bash
-brew install flyctl && fly auth login            # or https://fly.io/docs/flyctl/install/
+brew install flyctl && fly auth login       # https://fly.io/docs/flyctl/install/
 npm run setup:hosted
 ```
 
-The hosted wizard asks for an app name, region and display name, writes `fly.toml`, creates the app and
-its volume, generates the token encryption key, asks for your passphrase with hidden input, sets every
-secret without going through a shell, deploys, waits for the health check and prints the URLs to paste
-into claude.ai and Claude Code. Rerun it to redeploy; it reuses what exists.
+The wizard asks for an app name, region and passphrase, deploys, and prints a URL. Then:
 
-Then connect:
+- **claude.ai** (phone, desktop, web): Settings → Connectors → Add custom connector → paste the URL.
+- **Claude Code:** `claude mcp add --scope user --transport http plaid-cloud <URL>`, then `/mcp`.
 
-- **claude.ai** (web, desktop, phone): Settings → Connectors → Add custom connector → URL
-  `https://<app>.fly.dev/mcp`. Sign in with your passphrase. Scheduled routines can use the same connector.
-- **Claude Code:** `claude mcp add --scope user --transport http plaid-cloud https://<app>.fly.dev/mcp`,
-  then `/mcp` → authenticate.
+Link banks from any device: ask Claude for `start_link`, finish in the browser, then `link_status`.
 
-Link banks from any device by asking for `start_link`, finishing in the browser, then `link_status`.
-
-Everything else about hosted mode, including what changes from local mode, the manual deploy steps, other
-MCP clients, moving banks you already linked on the laptop, and day-to-day operation, is in
-**[docs/hosted.md](docs/hosted.md)**.
+Manual deploy, other MCP clients, migrating banks, operations: **[docs/hosted.md](docs/hosted.md)**
 
 ## Tools
 
-| Tool | What it returns |
-|------|-----------------|
-| `list_accounts` | every linked account with cached balances and last sync time |
-| `sync` | pulls new, changed and removed transactions from Plaid |
-| `get_transactions` | transactions for a date range, optionally one account; money out is negative |
-| `get_balances` | live balances from the banks (slow, rate-limited; use sparingly) |
-| `get_liabilities` | statement balance and date, minimum due, due date, APRs, promo end |
-| `export_csv` | `date,account,description,amount,pending` for a date range |
-| `start_link`, `link_status` (hosted) | connect or repair a bank from any device |
+| Tool | Returns |
+|---|---|
+| `list_accounts` | every linked account, cached balances, last sync |
+| `sync` | new, changed and removed transactions from Plaid |
+| `get_transactions` | a date range, optionally one account; money out is negative |
+| `get_balances` | live balances from the banks (slow; use sparingly) |
+| `get_liabilities` | statement balance, minimum due, due date, APRs, promo end |
+| `export_csv` | `date,account,description,amount,pending` |
+| `start_link`, `link_status` | connect or repair a bank (hosted) |
 
-Arguments, the CSV format, maintenance commands and customization are in
-**[docs/reference.md](docs/reference.md)**.
+Arguments, CSV format, maintenance: **[docs/reference.md](docs/reference.md)**
 
-## Security, data and disclaimer
+## Why not just Personal Finance?
 
-The security model, and how to report a vulnerability, are in **[SECURITY.md](SECURITY.md)**.
+Claude's built-in Personal Finance (US beta) also links banks through Plaid and is excellent for
+questions in chat. As of November 2026 it cannot export your data or run from Claude Code, scheduled
+tasks or Cowork. This project does those: a CSV for your spreadsheet, tools for automations, a database
+that is yours. Use Personal Finance for conversation and this for the plumbing, or either alone.
 
-This is not financial advice, the numbers can be wrong, your data goes from your bank to Plaid to a
-machine you control and nowhere else, you are the operator, and there is no warranty. The full text is in
-**[docs/disclaimer.md](docs/disclaimer.md)**; read it before linking a real bank.
+## Security and disclaimer
+
+- Security model and how to report a vulnerability: **[SECURITY.md](SECURITY.md)**
+- Not financial advice. Numbers can be wrong. Your data goes bank → Plaid → a machine you control, nowhere
+  else. No warranty. Full text: **[docs/disclaimer.md](docs/disclaimer.md)**
 
 ## License
 
-MIT. Contributions are welcome; please keep the read-only product list and the no-tokens-in-logs rule.
+MIT. Contributions welcome; keep the read-only product list and the no-tokens-in-logs rule.

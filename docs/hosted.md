@@ -3,6 +3,14 @@
 The same code runs as an always-on HTTPS service on a machine you own, so the data is reachable when you
 are not at your computer. Start with local mode working ([docs/local.md](local.md)), then come here.
 
+## Prerequisites
+
+- Local mode working, so `.env` holds your Plaid keys.
+- A free [Fly.io](https://fly.io) account and the Fly CLI, signed in. The default machine size fits inside
+  Fly's free monthly allowance.
+- To use it from claude.ai (web, desktop, phone) or scheduled routines: a claude.ai plan that allows
+  custom connectors (Pro, Max, Team or Enterprise at the time of writing). Claude Code needs no plan.
+
 ## What changes from local mode
 
 - `dist/http-server.js` serves MCP over Streamable HTTP at `/mcp`, protected by OAuth 2.1. It is a
