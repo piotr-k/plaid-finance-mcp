@@ -1,7 +1,8 @@
 /**
  * Guided hosted-mode deploy to Fly.io: `npm run setup:hosted`
  *
- *   1. checks the Fly CLI is installed and signed in, and that .env has Plaid keys
+ *   1. checks the Fly CLI is installed and signed in; asks for Plaid keys if .env has none
+ *      (so hosted-only installs never need the local wizard, a compiler or a local build)
  *   2. asks for an app name, region and display name; writes fly.toml from the template
  *   3. creates the app and its volume (skips what already exists)
  *   4. generates TOKEN_ENCRYPTION_KEY (kept in .env too, for migrating banks later),
@@ -15,7 +16,8 @@ import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { ask, askHidden, fail, mergeEnv, ok, parseEnv, run, say, warn } from "./setup.js";
+import { PlaidClient, PlaidEnvironment } from "plaid";
+import { ask, askHidden, collectPlaidKeys, fail, mergeEnv, ok, parseEnv, run, say, warn } from "./setup.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ENV_PATH = path.join(ROOT, ".env");
@@ -56,16 +58,27 @@ async function main() {
   ok("Fly CLI installed");
   if (!fly(["auth", "whoami"], { quiet: true }).ok) fail("Not signed in to Fly. Run `fly auth login` and try again.");
   ok("signed in to Fly");
-  if (!fs.existsSync(ENV_PATH)) fail("No .env yet. Run `npm run setup` first.");
-  const env = parseEnv(fs.readFileSync(ENV_PATH, "utf8"));
-  if (!env.PLAID_CLIENT_ID) fail("PLAID_CLIENT_ID is missing from .env. Run `npm run setup` first.");
-
   const plaidEnvAnswer = (await ask("  Plaid environment for the server [production/sandbox] (production): ")).toLowerCase() || "production";
   if (plaidEnvAnswer !== "production" && plaidEnvAnswer !== "sandbox") fail("Answer production or sandbox.");
   const plaidEnv = plaidEnvAnswer as "production" | "sandbox";
-  const secret = plaidEnv === "production" ? env.PLAID_SECRET_PRODUCTION || env.PLAID_SECRET : env.PLAID_SECRET_SANDBOX || env.PLAID_SECRET;
-  if (!secret) fail(`No ${plaidEnv} secret in .env (PLAID_SECRET_${plaidEnv.toUpperCase()}). Run \`npm run setup\` and add it.`);
-  ok(`Plaid keys for ${plaidEnv} found in .env`);
+
+  let env = fs.existsSync(ENV_PATH) ? parseEnv(fs.readFileSync(ENV_PATH, "utf8")) : {};
+  const secretOf = (e: Record<string, string>) => (plaidEnv === "production" ? e.PLAID_SECRET_PRODUCTION || e.PLAID_SECRET : e.PLAID_SECRET_SANDBOX || e.PLAID_SECRET);
+  if (!env.PLAID_CLIENT_ID || !secretOf(env)) {
+    say(`\n  No ${plaidEnv} Plaid keys in .env yet; let's add them. (Running the local wizard first is not required.)`);
+    env = await collectPlaidKeys(plaidEnv);
+  }
+  const secret = secretOf(env);
+  if (!env.PLAID_CLIENT_ID || !secret) fail(`PLAID_CLIENT_ID and a ${plaidEnv} secret are required.`);
+  // One cheap read-only call proves the keys work for this environment before anything is created.
+  try {
+    const client = new PlaidClient({ environment: plaidEnv === "production" ? PlaidEnvironment.Production : PlaidEnvironment.Sandbox, clientId: env.PLAID_CLIENT_ID, secret });
+    await client.institutions.getById({ institution_id: "ins_109508", country_codes: ["US"] });
+    ok(`Plaid keys verified for ${plaidEnv}`);
+  } catch (e) {
+    const code = (e as { body?: { error_code?: string } })?.body?.error_code;
+    fail(`Plaid rejected the keys for ${plaidEnv}${code ? ` (${code})` : ""}. Check them at https://dashboard.plaid.com/developers/keys and rerun; choose to replace the stored value.`);
+  }
 
   // 2. Names
   let app = "";

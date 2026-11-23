@@ -1,11 +1,14 @@
 # Hosted mode (Fly.io)
 
 The same code runs as an always-on HTTPS service on a machine you own, so the data is reachable when you
-are not at your computer. Start with local mode working ([docs/local.md](local.md)), then come here.
+are not at your computer. You can come here directly; local mode ([docs/local.md](local.md)) is not a
+prerequisite.
 
 ## Prerequisites
 
-- Local mode working, so `.env` holds your Plaid keys.
+- Node 22 or newer, to run the wizard. No compiler: install with `npm install --ignore-scripts` and the
+  native SQLite module is skipped; the server itself is built on Fly.
+- Your Plaid keys. If local mode already saved them in `.env` the wizard reuses them; otherwise it asks.
 - A free [Fly.io](https://fly.io) account and the Fly CLI, signed in. The default machine size fits inside
   Fly's free monthly allowance.
 - To use it from claude.ai (web, desktop, phone) or scheduled routines: a claude.ai plan that allows

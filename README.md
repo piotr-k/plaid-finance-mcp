@@ -15,12 +15,13 @@ Give Claude read-only access to your bank, card and loan accounts, on your own t
 | Stays fresh | when you run `sync` | automatically, via Plaid webhooks |
 | Setup time | 10 minutes | 15 more minutes |
 
-Start with local. Add hosted when you want your data away from the computer.
+Start with local if you want to try it on your laptop first. Go straight to hosted if what you want is
+your data on your phone; hosted does not need the local setup.
 
 ## Before you start
 
 - [ ] Comfortable in a terminal. This is a Node project, not an app.
-- [ ] **Node 22 or newer**: the installer at [nodejs.org](https://nodejs.org). On macOS also run `xcode-select --install` once (the native SQLite module needs a compiler). `npm run setup` checks both and tells you what is missing.
+- [ ] **Node 22 or newer**: the installer at [nodejs.org](https://nodejs.org). For local mode, also a compiler for the native SQLite module (`xcode-select --install` on macOS); hosted-only installs don't need one. `npm run setup` checks and tells you what is missing.
 - [ ] A free [Plaid developer account](https://dashboard.plaid.com). Sandbox works instantly with fake banks; real banks need Production access, a short form that is often approved on the spot.
 - [ ] For hosted mode: a free [Fly.io](https://fly.io) account, the [Fly CLI](https://fly.io/docs/flyctl/install/), and a claude.ai plan with custom connectors (Pro and up).
 
@@ -42,11 +43,14 @@ Real banks, the by-hand path and details: **[docs/local.md](docs/local.md)**
 ## Hosted mode
 
 ```bash
+git clone https://github.com/piotr-k/plaid-finance-mcp.git && cd plaid-finance-mcp   # skip if you did local mode
+npm install --ignore-scripts                 # no compiler needed; the build happens on Fly
 fly auth login                               # Fly CLI: https://fly.io/docs/flyctl/install/
 npm run setup:hosted
 ```
 
-The wizard asks for an app name, region and passphrase, deploys, and prints a URL. Then:
+The wizard asks for your Plaid keys (unless local mode already saved them), checks them with Plaid, asks
+for an app name, region and passphrase, deploys, and prints a URL. Then:
 
 - **claude.ai** (phone, desktop, web): Settings → Connectors → Add custom connector → paste the URL.
 - **Claude Code:** `claude mcp add --scope user --transport http plaid-cloud <URL>`, then `/mcp`.

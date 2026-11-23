@@ -106,26 +106,12 @@ export function run(label: string, cmd: string, args: string[], env: NodeJS.Proc
   return r.status === 0;
 }
 
-async function main() {
-  say("\nplaid-finance-mcp setup\n");
-
-  // 1. Environment
-  const major = Number(process.versions.node.split(".")[0]);
-  if (major < 22) fail(`Node ${process.versions.node} found; Node 22 or newer is required (https://nodejs.org).`);
-  ok(`Node ${process.versions.node}`);
-  try {
-    await import("better-sqlite3");
-    ok("native SQLite module loads");
-  } catch {
-    fail(
-      "better-sqlite3 did not build. Install a C++ toolchain, then run `npm install` again:\n" +
-        "    macOS:  xcode-select --install\n" +
-        "    Debian/Ubuntu:  sudo apt-get install -y build-essential python3",
-    );
-  }
-  if (!process.stdin.isTTY) fail("Run this in an interactive terminal (it needs to ask for your Plaid keys).");
-
-  // 2. .env
+/**
+ * Create .env if needed and ask for the Plaid keys. `need` says which secret is mandatory:
+ * the local wizard needs sandbox (it runs the smoke test); the hosted wizard needs whichever
+ * environment it is about to deploy. Existing values are kept unless the user chooses to replace them.
+ */
+export async function collectPlaidKeys(need: "sandbox" | "production"): Promise<Record<string, string>> {
   if (!fs.existsSync(ENV_PATH)) {
     fs.copyFileSync(EXAMPLE_PATH, ENV_PATH);
     fs.chmodSync(ENV_PATH, 0o600);
@@ -137,7 +123,7 @@ async function main() {
   const updates: Record<string, string> = {};
 
   say("\n  Plaid keys live at https://dashboard.plaid.com/developers/keys");
-  say("  Paste them here; what you type is hidden and only written to .env (which git ignores).\n");
+  say("  Paste them here; secrets are hidden as you type and only written to .env (which git ignores).\n");
 
   const want = async (key: string, prompt: string, { hidden, optional = false, check, alias }: { hidden: boolean; optional?: boolean; check?: (v: string) => string | null; alias?: string }) => {
     const existing = current[key] ? key : alias && current[alias] ? alias : null;
@@ -158,15 +144,40 @@ async function main() {
       return;
     }
   };
+  const secretCheck = (v: string) => (/^[a-f0-9]{30}$/i.test(v) ? null : "That does not look like a Plaid secret (30 hex characters). Try again.");
   await want("PLAID_CLIENT_ID", "client_id", { hidden: false, check: (v) => (/^[a-f0-9]{24}$/i.test(v) ? null : "That does not look like a Plaid client_id (24 hex characters). Try again.") });
-  await want("PLAID_SECRET_SANDBOX", "sandbox secret", { hidden: true, check: (v) => (/^[a-f0-9]{30}$/i.test(v) ? null : "That does not look like a Plaid secret (30 hex characters). Try again.") });
-  await want("PLAID_SECRET_PRODUCTION", "production secret, if you have production access", { hidden: true, optional: true, alias: "PLAID_SECRET", check: (v) => (/^[a-f0-9]{30}$/i.test(v) ? null : "That does not look like a Plaid secret (30 hex characters). Try again.") });
+  await want("PLAID_SECRET_SANDBOX", "sandbox secret", { hidden: true, optional: need !== "sandbox", check: secretCheck });
+  await want("PLAID_SECRET_PRODUCTION", "production secret" + (need === "production" ? "" : ", if you have production access"), { hidden: true, optional: need !== "production", alias: "PLAID_SECRET", check: secretCheck });
   if (!current.PLAID_ENV) updates.PLAID_ENV = "sandbox";
 
   if (Object.keys(updates).length) {
     fs.writeFileSync(ENV_PATH, mergeEnv(fs.readFileSync(ENV_PATH, "utf8"), updates), { mode: 0o600 });
     ok(`wrote ${Object.keys(updates).join(", ")} to .env`);
   }
+  return parseEnv(fs.readFileSync(ENV_PATH, "utf8"));
+}
+
+async function main() {
+  say("\nplaid-finance-mcp setup\n");
+
+  // 1. Environment
+  const major = Number(process.versions.node.split(".")[0]);
+  if (major < 22) fail(`Node ${process.versions.node} found; Node 22 or newer is required (https://nodejs.org).`);
+  ok(`Node ${process.versions.node}`);
+  try {
+    await import("better-sqlite3");
+    ok("native SQLite module loads");
+  } catch {
+    fail(
+      "better-sqlite3 did not build. Install a C++ toolchain, then run `npm install` again:\n" +
+        "    macOS:  xcode-select --install\n" +
+        "    Debian/Ubuntu:  sudo apt-get install -y build-essential python3",
+    );
+  }
+  if (!process.stdin.isTTY) fail("Run this in an interactive terminal (it needs to ask for your Plaid keys).");
+
+  // 2. .env and keys
+  await collectPlaidKeys("sandbox");
 
   // 3. Build and prove it works against Plaid's sandbox
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
