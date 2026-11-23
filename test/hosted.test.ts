@@ -164,3 +164,11 @@ test("oauth: a pending request is bound to the browser that started it", async (
   assert.equal(oauth.cookieValue(undefined, oauth.BIND_COOKIE), undefined);
   db.close();
 });
+
+test("oauth: a client that requests no scopes is granted all of them; unknown scopes are dropped", () => {
+  assert.deepEqual(oauth.grantedScopes(undefined), ["finance:read", "finance:link"]);
+  assert.deepEqual(oauth.grantedScopes([]), ["finance:read", "finance:link"]);
+  assert.deepEqual(oauth.grantedScopes(["finance:read"]), ["finance:read"]);
+  assert.deepEqual(oauth.grantedScopes(["bogus"]), ["finance:read", "finance:link"]);
+  assert.deepEqual(oauth.grantedScopes(["finance:link", "bogus"]), ["finance:link"]);
+});

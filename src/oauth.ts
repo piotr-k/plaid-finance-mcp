@@ -33,6 +33,11 @@ const MAX_FAILS_GLOBAL = 60; // high enough that locking the owner out needs man
 const MAX_FAILS_PER_REQUEST = 3;
 export const BIND_COOKIE = "mcp_authorize";
 export const SCOPES = ["finance:read", "finance:link"];
+/** A client that asks for no scopes gets all of them (the usual OAuth convention); unknown scopes are dropped. */
+export function grantedScopes(requested: string[] | undefined): string[] {
+  const known = (requested ?? []).filter((s) => SCOPES.includes(s));
+  return known.length ? known : [...SCOPES];
+}
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 const token = () => randomBytes(32).toString("base64url");
@@ -143,7 +148,7 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
     if (!row || row.expires_at < now()) return null;
     const p = JSON.parse(row.params) as Pending;
     const client = this.clientsStore.getClient(row.client_id) as OAuthClientInformationFull | undefined;
-    return { client_name: client?.client_name ?? "unnamed client", redirect_to: safeTarget(p.redirectUri), scopes: p.scopes ?? SCOPES };
+    return { client_name: client?.client_name ?? "unnamed client", redirect_to: safeTarget(p.redirectUri), scopes: grantedScopes(p.scopes) };
   }
 
   private failures(where: string, arg: string | number): number {
@@ -175,7 +180,7 @@ export class SqliteOAuthProvider implements OAuthServerProvider {
     const code = token();
     this.db.raw
       .prepare(`INSERT INTO oauth_codes (code_hash, client_id, code_challenge, redirect_uri, scopes, resource, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(sha256(code), row.client_id, p.codeChallenge, p.redirectUri, (p.scopes ?? SCOPES).join(" "), p.resource ?? null, now() + CODE_TTL_S);
+      .run(sha256(code), row.client_id, p.codeChallenge, p.redirectUri, grantedScopes(p.scopes).join(" "), p.resource ?? null, now() + CODE_TTL_S);
     this.db.raw.prepare(`DELETE FROM oauth_pending WHERE id = ?`).run(reqId);
     const url = new URL(p.redirectUri);
     url.searchParams.set("code", code);

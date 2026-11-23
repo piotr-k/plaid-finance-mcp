@@ -178,6 +178,14 @@ quote sets a secret to an empty string without any error.
 
 Link banks from any device by asking for `start_link`, finishing in the browser, then `link_status`.
 
+### Other MCP clients
+
+Nothing here is specific to Claude. Local mode is a standard stdio MCP server; hosted mode is Streamable
+HTTP with OAuth 2.1, PKCE and dynamic client registration, so any client that implements those should
+connect. Only Claude Code and claude.ai have been tested. For another hosted client, add its exact
+callback URL to `ALLOWED_REDIRECTS` (clients that use a loopback callback need nothing). Clients that
+redirect to a custom URL scheme are refused by design. A client that requests no scopes is granted both.
+
 ### Move banks you already linked locally
 
 ```bash
